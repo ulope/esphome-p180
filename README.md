@@ -94,40 +94,59 @@ entity, whether or not the value changed. At a 5s interval that is a wall of
 scrolling past continuously, which buries the p180 lines you are trying to
 read.
 
-Those state lines are `VERBOSE`, and every bit of discovery output — register
-dumps, change lines — is `DEBUG`. So the fix is simply **don't run the logger
-at `VERBOSE`**:
+**Mute those tags explicitly.** Which log level the state lines land on has
+moved between ESPHome versions, so lowering the global `level:` is not a
+reliable way to hide them — name the tags instead. A per-tag level may only
+ever be *less* verbose than the global one, and `WARN` still lets real problems
+from those components through:
 
 ```yaml
 logger:
   level: DEBUG
   logs:
     p180: DEBUG
+    sensor: WARN
+    binary_sensor: WARN
+    button: WARN
+    number: WARN
 ```
 
-At `DEBUG` the entity state logging compiles out entirely and the log contains
-only p180 output. Nothing you need for discovery is lost.
+All the discovery output — register dumps, change lines — is `DEBUG`, so
+nothing you need is lost.
 
-If you do need the p180 frame-level diagnostics (reassembly, stray
-notifications, CRC detail), raising the global level to `VERBOSE` un-mutes
-*every* component — `ble_client` and `esp32_ble_tracker` are far noisier than
-the sensors were. A per-tag level can only ever be **less** verbose than the
-global one, so mute the loud ones explicitly:
+If you also need the p180 frame-level diagnostics (reassembly, stray
+notifications, CRC detail), note that raising the global level to `VERBOSE`
+un-mutes *every* component: `ble_client` and `esp32_ble_tracker` are far
+noisier than the sensors were, especially alongside `bluetooth_proxy`. Mute
+those too:
 
 ```yaml
 logger:
   level: VERBOSE
   logs:
     p180: VERBOSE
-    sensor: INFO          # per-publish entity state - the main offender
-    binary_sensor: INFO
-    button: INFO
-    number: INFO
-    ble_client: INFO
-    esp32_ble_tracker: INFO
-    api: INFO
-    wifi: INFO
+    sensor: WARN
+    binary_sensor: WARN
+    button: WARN
+    number: WARN
+    ble_client: WARN
+    esp32_ble_tracker: WARN
+    api: WARN
+    wifi: WARN
 ```
+
+**Logger settings are compiled in, not runtime.** Changing them needs a full
+rebuild and upload — restarting the device is not enough. To check what is
+actually running, look at the boot banner:
+
+```
+[C][logger]: Logger:
+[C][logger]:   Max Level: DEBUG      <- the compiled-in ceiling
+[C][logger]:   Initial Level: DEBUG
+```
+
+If `Max Level` doesn't match your YAML, the firmware on the device was not
+built from that config.
 
 **Reset Baseline** prints a banner and dumps the table the next diff will be
 measured against, so there is always a visible "before" to compare against:

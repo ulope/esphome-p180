@@ -31,30 +31,40 @@ wifi:
   password: !secret wifi_password
 
 logger:
-  # DEBUG is deliberate. Every entity logs its state on every publish - once per
-  # poll, per entity, forever - which buries the p180 lines you are reading. That
-  # state logging is VERBOSE, so at DEBUG it compiles out entirely and the log
-  # contains only p180 output. All the discovery output (register dumps, change
-  # lines) is DEBUG, so nothing you need is lost.
   level: DEBUG
   logs:
     p180: DEBUG
 
+    # Every entity logs its state on EVERY publish - once per poll, per entity,
+    # forever - which buries the p180 lines you are actually reading:
+    #
+    #   [sensor]: 'AC Input Voltage' >> 0.0 V
+    #   [sensor]: 'Battery' >> 64 %
+    #
+    # Which level that lands on depends on your ESPHome version, so mute the
+    # tags explicitly rather than relying on the global level to hide them.
+    # A per-tag level may only ever be LESS verbose than `level:` above.
+    # WARN still lets real problems from these components through.
+    sensor: WARN
+    binary_sensor: WARN
+    button: WARN
+    number: WARN
+
   # Only if you need the p180 frame-level diagnostics (reassembly, stray
   # notifications, CRC detail). Raising the global level to VERBOSE also
-  # un-mutes every other component, so mute the loud ones explicitly:
+  # un-mutes every other component, so mute the loud ones too:
   #
   # level: VERBOSE
   # logs:
   #   p180: VERBOSE
-  #   sensor: INFO          # per-publish entity state - the main offender
-  #   binary_sensor: INFO
-  #   button: INFO
-  #   number: INFO
-  #   ble_client: INFO      # very chatty at VERBOSE
-  #   esp32_ble_tracker: INFO
-  #   api: INFO
-  #   wifi: INFO
+  #   sensor: WARN
+  #   binary_sensor: WARN
+  #   button: WARN
+  #   number: WARN
+  #   ble_client: WARN          # very chatty at VERBOSE
+  #   esp32_ble_tracker: WARN   # ditto, especially with bluetooth_proxy
+  #   api: WARN
+  #   wifi: WARN
 
 external_components:
   - source:
