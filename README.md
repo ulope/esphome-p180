@@ -83,22 +83,42 @@ SoC) so a deliberate change stands out, and `change_threshold: 1` to filter
 
 ### Keeping the log readable
 
-Every ESPHome entity logs its state on **every publish** — once per poll, per
-entity, whether or not the value changed. At a 5s interval that is a wall of
+If your log is a wall of entity states like this, once per poll, forever:
 
 ```
-[S][sensor]: 'AC Input Voltage' >> 0.0 V
-[S][sensor]: 'Battery' >> 64 %
+[23:50:16.063][S][sensor]: 'AC Input Voltage' >> 0.0 V
+[23:50:16.063][S][sensor]: 'Battery' >> 64 %
 ```
 
-scrolling past continuously, which buries the p180 lines you are trying to
-read.
+**no `logger:` setting will suppress them.** Those lines never came from the
+device. They are rendered host-side by `aioesphomeapi`'s state log formatter
+from the API state stream — `[S]` is not an ESPHome log level, which is why
+they carry no `tag:line` the way real device logs do (`[D][p180:330]`).
 
-**Mute those tags explicitly.** Which log level the state lines land on has
-moved between ESPHome versions, so lowering the global `level:` is not a
-reliable way to hide them — name the tags instead. A per-tag level may only
-ever be *less* verbose than the global one, and `WARN` still lets real problems
-from those components through:
+The switch is a flag on the `logs` command:
+
+```console
+$ esphome logs your-device.yaml --no-states
+```
+
+or the environment variable `ESPHOME_LOG_STATES=false`. The ESPHome dashboard
+and the Home Assistant **ESPHome Device Builder** add-on pass no flag, so they
+fall through to the default, which is *on*. Run `esphome logs ... --no-states`
+from a terminal to get a clean log there.
+
+Telling the two apart: a real device log line always has a source line number.
+
+```
+[D][p180:330]: input reg 72: 0x1196 -> 0x12C2 (4502 -> 4802)   <- device, filterable
+[S][sensor]: 'Battery' >> 64 %                                 <- host-side, --no-states
+```
+
+#### Device-side log levels
+
+Separately, entities *do* log their own state on the device at `VERBOSE`. That
+is a different set of lines, and those the logger does control. The example
+mutes them by name rather than relying on the global level, since which level
+they land on has moved between ESPHome versions:
 
 ```yaml
 logger:
@@ -111,45 +131,21 @@ logger:
     number: WARN
 ```
 
-All the discovery output — register dumps, change lines — is `DEBUG`, so
-nothing you need is lost.
+All discovery output — register dumps, change lines — is `DEBUG`, so nothing
+you need is lost. If you raise the global level to `VERBOSE` for the p180
+frame diagnostics, mute `ble_client` and `esp32_ble_tracker` too; on a node
+also running `bluetooth_proxy` they are far louder than the sensors were.
 
-If you also need the p180 frame-level diagnostics (reassembly, stray
-notifications, CRC detail), note that raising the global level to `VERBOSE`
-un-mutes *every* component: `ble_client` and `esp32_ble_tracker` are far
-noisier than the sensors were, especially alongside `bluetooth_proxy`. Mute
-those too:
-
-```yaml
-logger:
-  level: VERBOSE
-  logs:
-    p180: VERBOSE
-    sensor: WARN
-    binary_sensor: WARN
-    button: WARN
-    number: WARN
-    ble_client: WARN
-    esp32_ble_tracker: WARN
-    api: WARN
-    wifi: WARN
-```
-
-**Logger settings are compiled in, not runtime.** Changing them needs a full
-rebuild and upload — restarting the device is not enough. To check what is
-actually running, look at the boot banner:
+Logger settings are **compiled in, not runtime** — changing them needs a
+rebuild and upload, not a restart. The boot banner reports what is running:
 
 ```
-[C][logger]: Logger:
-[C][logger]:   Max Level: DEBUG      <- the compiled-in ceiling
-[C][logger]:   Initial Level: DEBUG
+[C][logger:216]:   Max Level: DEBUG
+[C][logger:238]:   Level for 'sensor': WARN
 ```
 
-If `Max Level` doesn't match your YAML, the firmware on the device was not
-built from that config.
-
-**Reset Baseline** prints a banner and dumps the table the next diff will be
-measured against, so there is always a visible "before" to compare against:
+**Reset Baseline** prints a banner and dumps the table the next diff is
+measured against, so there is always a visible "before":
 
 ```
 [I][p180]: ===== Baseline cleared - dumping the new reference, then change ONE thing =====

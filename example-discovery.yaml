@@ -35,16 +35,22 @@ logger:
   logs:
     p180: DEBUG
 
-    # Every entity logs its state on EVERY publish - once per poll, per entity,
-    # forever - which buries the p180 lines you are actually reading:
+    # Entities log their own state on the device at VERBOSE. Which level that
+    # lands on has moved between ESPHome versions, so mute the tags by name
+    # rather than relying on the global level. A per-tag level may only ever be
+    # LESS verbose than `level:` above; WARN still lets real problems through.
     #
-    #   [sensor]: 'AC Input Voltage' >> 0.0 V
-    #   [sensor]: 'Battery' >> 64 %
+    # NOTE: this does NOT stop lines like
     #
-    # Which level that lands on depends on your ESPHome version, so mute the
-    # tags explicitly rather than relying on the global level to hide them.
-    # A per-tag level may only ever be LESS verbose than `level:` above.
-    # WARN still lets real problems from these components through.
+    #   [S][sensor]: 'Battery' >> 64 %
+    #
+    # Those are not device logs at all - aioesphomeapi renders them host-side
+    # from the API state stream, so no logger: setting touches them. Tell them
+    # apart by the missing `tag:line` ([S][sensor] vs [D][p180:330]). Turn them
+    # off with `esphome logs <config>.yaml --no-states`, or the environment
+    # variable ESPHOME_LOG_STATES=false. The dashboard and the Home Assistant
+    # ESPHome Device Builder add-on pass no flag, so they default to showing
+    # them - run the CLI with --no-states for a clean log there.
     sensor: WARN
     binary_sensor: WARN
     button: WARN
