@@ -112,17 +112,12 @@ The device also **pushes a status frame of its own when state changes**, not
 only when polled: a USB toggle produces a frame within ~100ms rather than
 waiting up to `polling_interval`.
 
-### Remaining time is computed, not read
+### Remaining time is read, not computed
 
-Register 75 looked plausible at first (144 matched a rough runtime estimate) but
-stayed fixed across multiple real captures while the AFERIY app's own number
-changed. The component instead computes it:
-`(battery% / 100 × capacity_wh × efficiency) / discharge_power_w × 60` minutes.
-
-The `efficiency` factor exists because a naive calc without it runs noticeably
-optimistic versus the app (observed: 198 min calculated vs. 168 min shown
-in-app, a ~15% gap). Both `battery_capacity_wh` and `battery_efficiency` are
-live-adjustable via `number:` entities, no reflash needed to recalibrate.
+`remaining_time` reads **register 72**, the station's own estimate, confirmed
+against the AFERIY app. There is no capacity or efficiency calibration: the
+earlier computed formula and its `battery_capacity_wh` / `battery_efficiency`
+knobs have been removed.
 
 **Both of the original open questions are now answered**, by capturing with a
 real load attached rather than idle:
@@ -167,23 +162,32 @@ reg 13  ≈  AC_output / 0.85  +  150 W standby
 | 1552 W | 1976 | 2016 | −40 |
 | 1757 W | 2217 | 2222 | −5 |
 
-So the inverter converts at about **85%** and carries a **~150 W standby draw**
-whenever AC output is enabled. That standby is high enough to matter: leaving
-AC output on with nothing plugged in costs roughly 3.6 kWh/day.
+So the inverter converts at about **85%** under load.
 
-This matters for `battery_efficiency`: since reg 13 already includes conversion
-loss, multiplying by a derate factor **double-counts it**. If you keep the
-computed estimate, `efficiency` should be `1.0` and only account for
-usable-vs-nominal capacity. The default is still `0.85` so existing installs
-do not silently shift — change it deliberately.
+**The standby term is unresolved.** The fit implies a ~150 W draw whenever AC
+output is enabled, and reg 13 does read ~148 W while AC idles. But that does not
+survive observation: with AC output idling and only ~11 W of USB draw, the
+station's remaining-time estimate *rose* from 16 h to 17 h over seven minutes. A
+real 148 W draw would take roughly 1.7% of this pack in that time and push the
+estimate down, not up.
+
+So reg 13's idle reading is almost certainly **not** sustained battery draw.
+Either it reports something else when the inverter is energised but unloaded
+(apparent rather than real power is one candidate), or the measurement has an
+offset that only appears with AC output on. Note reg 13 matches USB power
+*exactly* with AC output off, so the register is sound — it is specifically the
+AC-idle case that misbehaves.
+
+**The test that settles it:** leave the station idle with AC output on for half
+an hour and watch the `Battery` percentage. At 148 W a ~1 kWh pack loses about
+1% every four minutes, which is unmissable. If SoC barely moves, the standby
+figure is wrong and the ~150 W term in the model above is an artifact.
 
 **Register 72 is the device's own remaining-runtime estimate, in minutes** —
 confirmed against the AFERIY app, which showed **16 h** while reg 72 read
 950–1000 (15.8–16.7 h), at idle with ~11 W of USB draw.
 
-The `remaining_time` sensor now reads it directly, so no `battery_capacity_wh`
-or `battery_efficiency` calibration is needed. The old formula is still
-available as `remaining_time_computed` for devices where reg 72 does not apply.
+The `remaining_time` sensor reads it directly — no calibration needed.
 
 Under a step load it collapses within two polls, then holds rock steady:
 
@@ -511,46 +515,7 @@ p180:
   id: p180_main
   ble_client_id: p180_ble
   polling_interval: 5s
-  battery_capacity_wh: 1024      # compiled-in starting value
-  battery_efficiency: 0.85       # compiled-in starting value - tune against the app
 
-# Adjustable at runtime from Home Assistant (e.g. after adding an expansion
-# battery, or after calibrating against the AFERIY app's own estimate) without
-# reflashing - persists across reboots via restore_value.
-number:
-  - platform: template
-    name: "Battery Capacity"
-    id: battery_capacity_wh
-    device_id: p180_device
-    icon: mdi:battery-high
-    unit_of_measurement: "Wh"
-    min_value: 1024
-    max_value: 5120
-    step: 1024
-    initial_value: 1024
-    optimistic: true
-    restore_value: true
-    on_value:
-      then:
-        - lambda: |-
-            id(p180_main).set_battery_capacity_wh(x);
-
-  - platform: template
-    name: "Battery Runtime Efficiency"
-    id: battery_efficiency
-    device_id: p180_device
-    icon: mdi:lightning-bolt
-    unit_of_measurement: "%"
-    min_value: 50
-    max_value: 100
-    step: 1
-    initial_value: 85
-    optimistic: true
-    restore_value: true
-    on_value:
-      then:
-        - lambda: |-
-            id(p180_main).set_battery_efficiency(x / 100.0f);
 
 sensor:
   - platform: p180
@@ -632,8 +597,6 @@ target and expect Home Assistant to discover it as a new device.
 |---|---|---|
 | `polling_interval` | `5s` | How often to read the status table (`0x04`) |
 | `settings_interval` | `60s` | How often to read the settings table (`0x03`). `0s` disables |
-| `battery_capacity_wh` | `1024` | Used to compute `remaining_time` |
-| `battery_efficiency` | `0.85` | Lumped derate factor for `remaining_time` |
 | `log_changes` | `false` | Log registers that changed since the previous frame |
 | `debug_dump` | `false` | Dump the whole table every poll (very noisy) |
 | `ignore_registers` | `[]` | Registers to exclude from change logging |

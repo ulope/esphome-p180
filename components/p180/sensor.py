@@ -68,14 +68,6 @@ REGISTER_SENSORS = {
     "remaining_time": ("min", 0, "duration", 72, 1.0),
 }
 
-# Computed rather than read straight from a register.
-# key -> (unit, accuracy_decimals, device_class, cpp_setter)
-DERIVED_SENSORS = {
-    # Fallback for devices where reg 72 does not apply. Needs battery_capacity_wh
-    # and battery_efficiency set correctly; prefer `remaining_time` above.
-    "remaining_time_computed": ("min", 0, "duration", "set_remaining_time_computed_sensor"),
-}
-
 # Expose any register without touching C++ - the point of the discovery workflow.
 # Scaling stays in YAML via `scale:` or ESPHome `filters:`.
 
@@ -114,15 +106,6 @@ CONFIG_SCHEMA = cv.Schema(
             )
             for key, (unit, accuracy, dclass, _register, _scale) in REGISTER_SENSORS.items()
         },
-        **{
-            cv.Optional(key): sensor.sensor_schema(
-                unit_of_measurement=unit,
-                accuracy_decimals=accuracy,
-                device_class=dclass,
-                state_class="measurement",
-            )
-            for key, (unit, accuracy, dclass, _setter) in DERIVED_SENSORS.items()
-        },
     }
 )
 
@@ -134,11 +117,6 @@ async def to_code(config):
         if key in config:
             sens = await sensor.new_sensor(config[key])
             cg.add(parent.add_register_sensor(register, scale, REG_SOURCES["input"], sens))
-
-    for key, (_unit, _accuracy, _dclass, setter) in DERIVED_SENSORS.items():
-        if key in config:
-            sens = await sensor.new_sensor(config[key])
-            cg.add(getattr(parent, setter)(sens))
 
     for conf in config.get(CONF_RAW_REGISTERS, []):
         sens = await sensor.new_sensor(conf)

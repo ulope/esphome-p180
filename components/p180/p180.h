@@ -62,8 +62,6 @@ static const uint32_t P180_MIN_REQUEST_GAP_MS = 250;
 // Registers backing derived (non-raw) entities. Everything else is described in
 // sensor.py / binary_sensor.py or configured from YAML.
 static const uint16_t P180_REG_AC_IN_FREQUENCY = 9;
-static const uint16_t P180_REG_BATTERY_DISCHARGE_POWER = 13;
-static const uint16_t P180_REG_BATTERY_PERCENT = 31;
 // AC input frequency reads ~6000 (60.00Hz) on grid power and exactly 0 on
 // battery. Threshold well below nominal so a noisy sample can't flap the sensor.
 static const uint16_t P180_GRID_PRESENT_THRESHOLD = 1000;
@@ -133,24 +131,11 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   }
 
   // --- Derived entities (computed, not a straight register read) ---------
-  // The device's OWN estimate lives in register 72 and is wired up through the
-  // register table as `remaining_time`. This is the fallback computed one.
-  void set_remaining_time_computed_sensor(sensor::Sensor *s) { this->remaining_time_computed_sensor_ = s; }
   void set_connected_binary_sensor(binary_sensor::BinarySensor *s) { this->connected_binary_sensor_ = s; }
   // Is grid/AC power actually present at the input (the outage sensor) -
   // confirmed by direct test against real AC loss on this device.
   void set_grid_power_binary_sensor(binary_sensor::BinarySensor *s) { this->grid_power_binary_sensor_ = s; }
 
-  // Battery capacity in Wh, used to compute remaining_time. Has a compiled-in
-  // default (set via YAML) but is meant to be overridden live from a `number`
-  // entity so it can be bumped later (e.g. after adding an expansion battery)
-  // without reflashing. See the README/example YAML for the number: block.
-  void set_battery_capacity_wh(float wh) { this->battery_capacity_wh_ = wh; }
-  // Lumped derate factor (0-1) for the COMPUTED estimate only. Register 72
-  // carries the station's own estimate and matches the AFERIY app, so prefer
-  // `remaining_time` over `remaining_time_computed` and leave this alone.
-  // Note reg 13 already includes conversion loss, so a derate here double-counts.
-  void set_battery_efficiency(float eff) { this->battery_efficiency_ = eff; }
 
   // --- Probe actions (all reads - no 0x06 writes anywhere) ---------------
   void dump_input_registers();
@@ -199,9 +184,6 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   std::vector<RegisterSensor> register_sensors_;
   std::vector<RegisterBitSensor> register_bit_sensors_;
 
-  sensor::Sensor *remaining_time_computed_sensor_{nullptr};
-  float battery_capacity_wh_{1024.0f};
-  float battery_efficiency_{0.85f};
 
   binary_sensor::BinarySensor *connected_binary_sensor_{nullptr};
   binary_sensor::BinarySensor *grid_power_binary_sensor_{nullptr};
