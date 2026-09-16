@@ -96,10 +96,12 @@ p180:
   # and read off which register moved.
   log_changes: true
   # Registers that move on their own and would otherwise drown out the signal.
-  # Add to this list as you find more noisy ones.
-  ignore_registers: [12, 13, 31]
-  # Ignore +/-1 jitter on analog readings.
-  change_threshold: 1
+  # 72 is free-running: it wanders on every single poll (4502..7203 observed)
+  # with no correlation to anything you do. Add more as you find them.
+  ignore_registers: [12, 13, 31, 72]
+  # 0, not 1: with 72 muted by name there is no jitter left to filter, and the
+  # slow-moving registers on a resting unit move by exactly 1.
+  change_threshold: 0
   # Set true to dump the whole table every poll. Very noisy - the dump buttons
   # below are usually what you want instead.
   debug_dump: false
@@ -153,15 +155,16 @@ sensor:
     # `source:` selects the table: `input` (0x04 status, the default) or
     # `holding` (0x03 settings).
     raw_registers:
-      - register: 41
-        name: "Reg 41 (status bitmask candidate)"
+      # Both move exactly in step with the USB output being toggled - confirmed
+      # over five clean transitions on a real P180 Pro.
+      - register: 75
+        name: "Reg 75 (output status bits)"
         device_id: p180_device
-      - register: 39
-        name: "Reg 39 (total output power candidate)"
-        device_id: p180_device
-      - register: 56
-        name: "Reg 56 (SoC candidate)"
-        scale: 0.1
+      # 0x0837 with USB on, 0x0000 with it off. One frame caught it partway at
+      # 0x0037, so the two bytes update independently: likely hi = status byte
+      # (0x08, the same value reg 75 carries), lo = 0x37 = 55 = 5.5V.
+      - register: 54
+        name: "Reg 54 (USB-related)"
         device_id: p180_device
       - register: 66
         source: holding
@@ -179,22 +182,28 @@ binary_sensor:
       name: "Grid Power"
       device_id: p180_device
 
-    # Once the status bitmask register is confirmed, the output flags are pure
-    # YAML. Masks below are the Sydpower/P280 layout - hypotheses, not facts.
+    # Reg 75 is the output status register on the P180 - NOT reg 41. Reg 41 sat
+    # at 0x0000 through five USB transitions, so the Sydpower/P280 bitmask
+    # layout does not apply to this device.
     raw_bits:
-      - register: 41
-        bitmask: 0x0800
-        name: "AC Output Active (unconfirmed)"
+      # Confirmed: 0x0008 tracks the USB output exactly.
+      - register: 75
+        bitmask: 0x0008
+        name: "USB Output Active"
         device_id: p180_device
-      - register: 41
-        bitmask: 0x0400
+
+      # The DC / AC / light flags are most likely other bits of reg 75. Toggle
+      # each one, watch which bit of 75 moves, then fix the mask and drop the
+      # "(unconfirmed)". These three masks are guesses, nothing more.
+      - register: 75
+        bitmask: 0x0004
         name: "DC Output Active (unconfirmed)"
         device_id: p180_device
-      - register: 41
-        bitmask: 0x0200
-        name: "USB Output Active (unconfirmed)"
+      - register: 75
+        bitmask: 0x0002
+        name: "AC Output Active (unconfirmed)"
         device_id: p180_device
-      - register: 41
-        bitmask: 0x1000
+      - register: 75
+        bitmask: 0x0001
         name: "Light On (unconfirmed)"
         device_id: p180_device

@@ -25,8 +25,31 @@ registers changed:
 | 13 | 0   | 256 | Battery discharge power (W) — *see caveat below* |
 | 31 | 90  | 90  | Battery % (raw value = %, no scaling) |
 
-That is 7 registers out of 100. The other 93 arrive on every poll and are
+Confirmed since, on a P180 Pro on a 50Hz grid, idle on battery:
+
+| Register | Observed | Field |
+|---|---|---|
+| 75 | `0x0008` USB on → `0x0000` off | **Output status bits** — 0x0008 = USB output |
+| 54 | `0x0837` USB on → `0x0000` off | USB-related; bytes update independently (caught mid-change at `0x0037`) |
+| 1  | `5` | constant; charge-rate step? |
+| 11 | `500` | AC output frequency — 50.0Hz nominal with AC output off, matching the ×0.1 scaling derived on a 60Hz unit |
+| 72 | wanders 4502–7203 every poll | free-running, correlates with nothing — put it in `ignore_registers` |
+| 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
+
+**The Sydpower/P280 bitmask layout does not apply to this device.** Registers
+41, 39 and 56 sat at `0x0000` through five clean USB on/off transitions. Reg 75
+is the output status register here, not reg 41.
+
+The table is also very sparse: idle on battery with every output off, only 9 of
+the 100 registers are non-zero. Most of the zeros are genuinely idle fields
+(AC in/out, power), not a parsing problem.
+
+That is a handful of registers out of 100. The rest arrive on every poll and are
 available to expose from YAML — see [Register discovery](#register-discovery).
+
+The device also **pushes a status frame of its own when state changes**, not
+only when polled: a USB toggle produces a frame within ~100ms rather than
+waiting up to `polling_interval`.
 
 ### Remaining time is computed, not read
 
