@@ -57,7 +57,7 @@ finding. Only trust a row as far as its grade.
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
-| 13 | 137 W at AC idle, `0` with all outputs off | **Output-attributed power (W)** — carries a ~137 W artifact whenever AC output is energised, and never includes station self-consumption | **measured** — exact under load and for USB steps; reads exactly 0 with outputs off; the idle figure is refuted by a 13-minute SoC hold |
+| 13 | `0` with all outputs off; an offset of 12–155 W with AC energised | **Output-attributed power, watts** — never includes station self-consumption; the AC-idle offset varies *between sessions* and is sometimes plain wrong | **measured** — unit, additivity, and 0-with-outputs-off; the high idle figures are refuted by a 13-minute SoC hold. Mechanism **unknown** |
 | 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
 | 1 | `5` | charge-rate step? | **guess** — constant in every capture |
@@ -250,9 +250,42 @@ So **reg 13's 137 W at AC idle is wrong by roughly a factor of three**.
 
 **Reg 13 does not include station self-consumption at all.** Switching AC output
 off drops it to *exactly* 0, while the station is still plainly running its BMS,
-display and Bluetooth. So it reports output-attributed power only, and its
-AC-idle figure is an accounting artifact rather than a measurement of anything
-leaving the battery.
+display and Bluetooth. So it reports output-attributed power only.
+
+#### Is it even watts?
+
+Yes. With AC output off and only a USB-C PD device attached, reg 13 equalled
+reg 78 exactly at 11, 15, 33 and 37 W, and adding an 8 W USB draw on top of the
+AC-idle reading moved it by exactly +8. Same unit as regs 78 and 90.
+
+The error is **additive, not an RMS artifact**. At 1757 W of AC output, an
+additive model predicts 2204 against the observed 2222 (−18); combining the two
+terms in quadrature, as a ripple-current or RMS-current measurement would,
+predicts 2072 (−150).
+
+#### But the offset is not a constant
+
+This is the part that rules out a simple firmware standby figure:
+
+| session | AC output | reg 13 | implied offset |
+|---|---|---|---|
+| 00:07 | 23 / 36 / 39 W | 35 / 51 / 54 | **12–15 W** |
+| 00:24 | 1016 / 1552 / 1757 W | 1357 / 2016 / 2222 | ~148 W |
+| 01:10 | 1088 / 1090 / 1103 W | 1404 / 1408 / 1422 | ~137 W |
+
+In the 00:07 session a 137 W offset would have put those readings at 160/173/176.
+They were 35/51/54. Yet within each session the offset is rock steady — in the
+01:10 session, subtracting 137 gives an implied conversion efficiency of
+0.858–0.859 across every sample.
+
+Note that the 12–15 W seen at 00:07 is right about where reg 72's own accounting
+puts the inverter's idle cost. So reg 13 appears **correct in some sessions and
+roughly ten times too high in others**, with no mechanism yet identified.
+
+**Test worth running:** with the station idle, switch AC output off, wait a few
+seconds, switch it back on, and read reg 13 before applying any load. If it
+comes back at ~12 W rather than ~137 W, the high reading is a latched state —
+and toggling AC output becomes a workaround.
 
 What the station itself believes, from reg 72 (assuming a ~940 Wh pack at 48%):
 
