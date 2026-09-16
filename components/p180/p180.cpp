@@ -442,9 +442,12 @@ void P180Component::probe_extended_registers() {
     return;
   }
   ESP_LOGI(TAG,
-           "Probing %u input registers (the station volunteers %u). No reply, or a CRC "
-           "failure, means the extended range isn't supported - polling continues normally.",
-           static_cast<unsigned>(P180_MAX_REGS), static_cast<unsigned>(P180_INPUT_REG_COUNT));
+           "Probing %u input registers (the station volunteers %u). This message is printed "
+           "before the request, not a verdict - read the dump that follows. No dump, or a CRC "
+           "warning, means the range is not answered. On a P180 Pro it IS answered, but the "
+           "data above register %u is comms-buffer memory, not telemetry (see the README).",
+           static_cast<unsigned>(P180_MAX_REGS), static_cast<unsigned>(P180_INPUT_REG_COUNT),
+           static_cast<unsigned>(P180_INPUT_REG_COUNT - 1));
   this->dump_pending_[REG_SOURCE_INPUT] = true;
   this->send_read_request_(P180_FUNC_READ_INPUT, 0, P180_MAX_REGS);
 }

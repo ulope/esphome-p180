@@ -20,8 +20,15 @@ REG_SOURCES = {
     "holding": RegSource.REG_SOURCE_HOLDING,
 }
 
-# Upper bound baked into the C++ buffers (P180_MAX_REGS).
+# Upper bound baked into the C++ buffers (P180_MAX_REGS). The probe button can
+# read this far, but see REAL_REGISTER_COUNT below before binding an entity here.
 MAX_REGISTER = 159
+
+# The station only has this many real input registers. A 160-register probe IS
+# answered, but on a P180 Pro everything above this is comms-buffer memory - it
+# contained our own Modbus request echoed back verbatim, twice, plus ASCII
+# fragments. Binding an entity up there reads out-of-bounds memory, not telemetry.
+REAL_REGISTER_COUNT = 100
 
 CONF_P180_ID = "p180_id"
 CONF_POLLING_INTERVAL = "polling_interval"

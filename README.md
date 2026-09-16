@@ -69,6 +69,29 @@ registers.
 The status bitmask is additive: with USB and AC both on, reg 75 reads
 `0x0018` = `0x0008 | 0x0010`.
 
+### Registers above 99 are not telemetry
+
+The **Probe Extended Registers** button asks for 160 registers, and the P180 Pro
+**does answer** — the frame parses and the CRC passes. But the extra range is
+not more telemetry. Decoding it:
+
+| Register | Bytes | Meaning |
+|---|---|---|
+| 125–128 | `11 04 00 00 00 A0 E2 F2` | **our own Modbus probe request, echoed back verbatim** |
+| 129–132 | `2C 31 2C 35 2C 2C 38 2C` | ASCII `,1,5,,8,` |
+| 133–136 | `11 04 00 00 00 A0 E2 F2` | the same request again |
+| 137 | `0D 00` | carriage return + NUL |
+| everything else | `0000` | — |
+
+That is a **communications buffer**, read out of bounds. The request bytes are
+byte-for-byte what the component transmitted, so nothing above register 99 can
+be trusted as a measurement. Binding an entity up there now produces a config
+warning.
+
+Note the probe's own log line is printed *before* the request goes out — it
+describes what to look for, it is not a verdict. The dump that follows, and the
+`input register count changed 100 -> 160` line, are the actual result.
+
 **Not found: any fan indicator.** With the fans audibly cycling on and off
 about three minutes after a sustained 1.3kW load, the only registers that moved
 in that window were 8, 10, 72 and 78 — all already identified. Fan state does

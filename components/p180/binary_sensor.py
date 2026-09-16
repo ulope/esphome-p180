@@ -1,3 +1,5 @@
+import logging
+
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import binary_sensor
@@ -8,9 +10,32 @@ from . import (
     CONF_REGISTER,
     CONF_SOURCE,
     MAX_REGISTER,
+    REAL_REGISTER_COUNT,
     REG_SOURCES,
     P180Component,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _register_number(value):
+    """Validate a register number, warning if it is past the real table.
+
+    The probe button can read up to MAX_REGISTER, but only the first
+    REAL_REGISTER_COUNT are telemetry - above that the station returns
+    comms-buffer memory. Binding an entity there is almost always a mistake,
+    so warn rather than silently publishing garbage.
+    """
+    value = cv.int_range(min=0, max=MAX_REGISTER)(value)
+    if value >= REAL_REGISTER_COUNT:
+        _LOGGER.warning(
+            "p180: register %d is above the station's %d real registers. The extended "
+            "range is answered but holds comms-buffer memory, not telemetry, so this "
+            "entity will publish meaningless values. See the README.",
+            value, REAL_REGISTER_COUNT,
+        )
+    return value
+
 
 CONF_RAW_BITS = "raw_bits"
 
@@ -38,7 +63,7 @@ BIT_SENSORS = {
 # located, the USB/DC/AC/light flags are pure YAML - no C++ change.
 RAW_BIT_SCHEMA = binary_sensor.binary_sensor_schema().extend(
     {
-        cv.Required(CONF_REGISTER): cv.int_range(min=0, max=MAX_REGISTER),
+        cv.Required(CONF_REGISTER): _register_number,
         cv.Required(CONF_BITMASK): cv.hex_uint16_t,
         cv.Optional(CONF_SOURCE, default="input"): cv.enum(REG_SOURCES, lower=True),
     }
