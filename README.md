@@ -225,8 +225,15 @@ value) whitelist, not something that arrives by accident.
 
 ```yaml
 esphome:
-  name: p180battery
-  friendly_name: P180 Battery
+  # The ESP32 itself - this is the hostname and OTA identity, not the battery.
+  name: esp32-ble-gateway
+  friendly_name: ESP32 BLE Gateway
+  min_version: 2025.7.0
+  # The battery is a sub-device of the ESP32, so its entities group under
+  # "AFERIY P180" in Home Assistant instead of taking over the whole node.
+  devices:
+    - id: p180_device
+      name: "AFERIY P180"
 
 esp32:
   board: esp32dev
@@ -272,6 +279,7 @@ number:
   - platform: template
     name: "Battery Capacity"
     id: battery_capacity_wh
+    device_id: p180_device
     icon: mdi:battery-high
     unit_of_measurement: "Wh"
     min_value: 1024
@@ -288,6 +296,7 @@ number:
   - platform: template
     name: "Battery Runtime Efficiency"
     id: battery_efficiency
+    device_id: p180_device
     icon: mdi:lightning-bolt
     unit_of_measurement: "%"
     min_value: 50
@@ -306,29 +315,72 @@ sensor:
     p180_id: p180_main
     ac_in_voltage:
       name: "AC Input Voltage"
+      device_id: p180_device
     ac_in_frequency:
       name: "AC Input Frequency"
+      device_id: p180_device
     battery_percent:
       name: "Battery"
+      device_id: p180_device
     output_power:
       name: "Output Power"
+      device_id: p180_device
     battery_discharge_power:
       name: "Battery Discharge Power"
+      device_id: p180_device
     remaining_time:
       name: "Remaining Minutes"
+      device_id: p180_device
 
 binary_sensor:
   - platform: p180
     p180_id: p180_main
     connected:
       name: "P180 Connected"
+      device_id: p180_device
     grid_power:
       name: "Grid Power"        # <-- this is your outage sensor
+      device_id: p180_device
 ```
 
 In Home Assistant, `binary_sensor.grid_power` going `off` means the P180
 detected loss of AC input (a real outage) and switched to battery — that's
 the automation trigger you want for alerts/notifications.
+
+### The battery is a sub-device, not the node
+
+The ESP32 and the battery are two different things, so the config keeps them
+separate: the `esphome:` block names the ESP32 (that's its hostname and OTA
+identity), and the battery is declared as a sub-device that the entities attach
+to with `device_id:`.
+
+```yaml
+esphome:
+  name: esp32-ble-gateway
+  devices:
+    - id: p180_device
+      name: "AFERIY P180"
+```
+
+In Home Assistant you get an "ESP32 BLE Gateway" device with an "AFERIY P180"
+device nested under it, and all the battery entities live on the battery. The
+ESP32 stays free for anything else you put on it — another BLE client, a sensor,
+a second power station — each as its own sub-device, without one of them
+claiming the node's identity.
+
+Sub-devices need **ESPHome 2025.7.0 or newer**, which is what the `min_version:`
+line pins. On older versions `devices:` is not a valid key and the config is
+rejected; drop both the `devices:` block and every `device_id:` line to go back
+to a flat node.
+
+Each sub-device can also take an `area_id:` if you use ESPHome areas.
+
+**Migrating an existing install:** adding `device_id:` re-parents entities onto
+the new sub-device in Home Assistant. Entity IDs are preserved, but the device
+your automations and dashboards reference by *device* (device triggers, device
+conditions, area assignment) changes, so check anything wired up that way. If
+you also change `name:`, the node gets a new hostname — update your DNS/OTA
+target and expect Home Assistant to discover it as a new device.
 
 ## Configuration reference
 
@@ -352,13 +404,16 @@ Named: `ac_in_voltage`, `ac_in_frequency`, `ac_out_voltage`, `ac_out_frequency`,
 
 Generic: `raw_registers:` — a list of `register:` (0-159), optional
 `source:` (`input`/`holding`, default `input`) and `scale:` (default `1.0`),
-plus the usual sensor options including `filters:`.
+plus the usual sensor options including `filters:` and `device_id:`.
 
 ### `binary_sensor:` platform
 
 Named: `connected`, `grid_power`.
 
 Generic: `raw_bits:` — a list of `register:`, `bitmask:` and optional `source:`.
+
+Every entity on every platform above also accepts the standard ESPHome
+`device_id:`, used here to attach it to the battery sub-device.
 
 ### `button:` platform
 
