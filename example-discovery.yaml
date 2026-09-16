@@ -163,6 +163,11 @@ sensor:
     usb_output_power:
       name: "USB Output Power"
       device_id: p180_device
+    # Register 72 - the station's own estimate, confirmed against the AFERIY
+    # app. No capacity or efficiency calibration needed.
+    remaining_time:
+      name: "Remaining Time"
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -186,14 +191,6 @@ sensor:
       # Reads 0x0010 while AC output is on, and does not respond to the others.
       - register: 53
         name: "Reg 53 (AC-side, unidentified)"
-        device_id: p180_device
-      # Falls as load rises: 4230 min at 11W, 934 at 37W, 670 at 54W, and only
-      # wanders when the draw is ~0. Very likely REMAINING RUNTIME IN MINUTES.
-      # Compare it against the AFERIY app under a steady load - if it matches,
-      # it replaces the computed remaining_time and the efficiency fudge
-      # factor entirely.
-      - register: 72
-        name: "Reg 72 (remaining minutes?)"
         device_id: p180_device
       # AC output power. Mirrors reg 12 exactly, so one of the two is a copy.
       # Both stayed 0 through a USB-only load, so both are AC-specific - no

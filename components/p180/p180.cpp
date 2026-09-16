@@ -400,22 +400,20 @@ void P180Component::publish_(RegSource source) {
     this->grid_power_binary_sensor_->publish_state(regs[P180_REG_AC_IN_FREQUENCY] > P180_GRID_PRESENT_THRESHOLD);
   }
 
-  // "Remaining time" is computed rather than read. Register 75 looked plausible
-  // but stayed fixed across captures while the app's own estimate moved. Note
-  // that ~19 registers were invisible to those early captures because the old
-  // hex dump was truncated below the frame size, so a genuine time-to-empty
-  // register may still turn up - see the README's discovery notes.
-  if (this->remaining_time_sensor_ != nullptr && P180_REG_BATTERY_PERCENT < count) {
+  // The station's own remaining-time estimate is register 72, published as
+  // `remaining_time` through the register table. This is the computed fallback,
+  // kept for devices where reg 72 turns out not to apply.
+  if (this->remaining_time_computed_sensor_ != nullptr && P180_REG_BATTERY_PERCENT < count) {
     const float discharge_w = regs[P180_REG_BATTERY_DISCHARGE_POWER];
     if (discharge_w > 0.0f) {
       const float battery_pct = regs[P180_REG_BATTERY_PERCENT];
       const float minutes =
           (battery_pct / 100.0f * this->battery_capacity_wh_ * this->battery_efficiency_) / discharge_w * 60.0f;
-      this->remaining_time_sensor_->publish_state(minutes);
+      this->remaining_time_computed_sensor_->publish_state(minutes);
     } else {
       // Not discharging (on AC passthrough, or idle) - "remaining time on
       // battery" isn't a meaningful number right now.
-      this->remaining_time_sensor_->publish_state(NAN);
+      this->remaining_time_computed_sensor_->publish_state(NAN);
     }
   }
 }

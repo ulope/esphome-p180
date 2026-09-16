@@ -37,12 +37,18 @@ REGISTER_SENSORS = {
     # USB output power. Tracked a USB-C PD load exactly on a P180 Pro, and is
     # separate from output_power (reg 12), which stays 0 for a USB-only load.
     "usb_output_power": ("W", 0, "power", 78, 1.0),
+    # The station's OWN remaining-runtime estimate. Confirmed against the AFERIY
+    # app: reg 72 read 950-1000 while the app showed 16h, at idle with ~11W of
+    # USB draw. Needs no capacity or efficiency calibration.
+    "remaining_time": ("min", 0, "duration", 72, 1.0),
 }
 
 # Computed rather than read straight from a register.
 # key -> (unit, accuracy_decimals, device_class, cpp_setter)
 DERIVED_SENSORS = {
-    "remaining_time": ("min", 0, "duration", "set_remaining_time_sensor"),
+    # Fallback for devices where reg 72 does not apply. Needs battery_capacity_wh
+    # and battery_efficiency set correctly; prefer `remaining_time` above.
+    "remaining_time_computed": ("min", 0, "duration", "set_remaining_time_computed_sensor"),
 }
 
 # Expose any register without touching C++ - the point of the discovery workflow.

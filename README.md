@@ -52,7 +52,7 @@ All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 | 66 / 67 | increment together while an AC load runs | **Monotonic counter**, roughly 10 Wh per count. Holds when the load stops, never decreases. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
 | 1  | `5` | constant; charge-rate step? |
 | 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
-| 72 | falls as load rises; wanders at zero load | **Remaining runtime (minutes?)** — do *not* put this in `ignore_registers` |
+| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — confirmed against the app. Read by `remaining_time` |
 | 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — named sensor `usb_output_power` |
 | 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 exactly. Both stay `0` under a USB-only load, so both are AC-specific; no *total* output register has turned up |
 | 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
@@ -154,8 +154,13 @@ computed estimate, `efficiency` should be `1.0` and only account for
 usable-vs-nominal capacity. The default is still `0.85` so existing installs
 do not silently shift — change it deliberately.
 
-**Register 72 behaves like the device's own remaining-runtime estimate, in
-minutes** — but its absolute value only reconciles under load.
+**Register 72 is the device's own remaining-runtime estimate, in minutes** —
+confirmed against the AFERIY app, which showed **16 h** while reg 72 read
+950–1000 (15.8–16.7 h), at idle with ~11 W of USB draw.
+
+The `remaining_time` sensor now reads it directly, so no `battery_capacity_wh`
+or `battery_efficiency` calibration is needed. The old formula is still
+available as `remaining_time_computed` for devices where reg 72 does not apply.
 
 Under a step load it collapses within two polls, then holds rock steady:
 
@@ -176,10 +181,12 @@ component's 1024 Wh default:
 | 2222 W | 15 | 33 330 W·min | 556 Wh |
 | 150 W (idle) | 950 | 142 500 W·min | **2375 Wh** ✗ |
 
-**The idle point is 4.3× off and does not fit.** For reg 72 to read ~950 at
-idle, the draw would have to be ~39 W, but reg 13 reports 148 W. So the
-device's own estimate is not using reg 13's idle figure — it either discounts
-the inverter standby or measures battery current separately at low load.
+**The idle point is 4.3× off.** For reg 72 to read ~950 at idle, the draw would
+have to be ~39 W, but reg 13 reports 148 W. Since the app agrees with reg 72,
+this is the *station's* accounting, not a misread: its runtime estimate does not
+charge the ~150 W inverter standby against the battery. Treat `remaining_time`
+as optimistic whenever AC output is idling — the pack will not actually last
+16 h while burning 148 W.
 
 When the load is removed it climbs back over roughly 40 seconds
 (`20 → 63 → 685 → 825 → 892 → 905`) and then **plateaus** at 860–1010,
