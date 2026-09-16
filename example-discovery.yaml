@@ -31,10 +31,30 @@ wifi:
   password: !secret wifi_password
 
 logger:
+  # DEBUG is deliberate. Every entity logs its state on every publish - once per
+  # poll, per entity, forever - which buries the p180 lines you are reading. That
+  # state logging is VERBOSE, so at DEBUG it compiles out entirely and the log
+  # contains only p180 output. All the discovery output (register dumps, change
+  # lines) is DEBUG, so nothing you need is lost.
   level: DEBUG
   logs:
-    # DEBUG is the level the register dumps and the change lines are logged at.
     p180: DEBUG
+
+  # Only if you need the p180 frame-level diagnostics (reassembly, stray
+  # notifications, CRC detail). Raising the global level to VERBOSE also
+  # un-mutes every other component, so mute the loud ones explicitly:
+  #
+  # level: VERBOSE
+  # logs:
+  #   p180: VERBOSE
+  #   sensor: INFO          # per-publish entity state - the main offender
+  #   binary_sensor: INFO
+  #   button: INFO
+  #   number: INFO
+  #   ble_client: INFO      # very chatty at VERBOSE
+  #   esp32_ble_tracker: INFO
+  #   api: INFO
+  #   wifi: INFO
 
 external_components:
   - source:
