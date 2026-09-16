@@ -30,6 +30,10 @@ REGISTER_SENSORS = {
     "battery_discharge_power": ("W", 0, "power", 13, 1.0),
     # Raw value IS the percent on this device - no scaling.
     "battery_percent": ("%", 0, "battery", 31, 1.0),
+    # Light mode enum: 0 = off, then one value per mode as you cycle the button.
+    # Confirmed on a P180 Pro. NOTE: it steps by 1, so it is invisible unless
+    # `change_threshold` is 0.
+    "light_mode": (None, 0, None, 79, 1.0),
 }
 
 # Computed rather than read straight from a register.
@@ -40,6 +44,21 @@ DERIVED_SENSORS = {
 
 # Expose any register without touching C++ - the point of the discovery workflow.
 # Scaling stays in YAML via `scale:` or ESPHome `filters:`.
+
+def _sensor_kwargs(unit, accuracy, dclass):
+    """Build sensor_schema kwargs, omitting the ones a register does not have.
+
+    An enum register (light mode) has no unit and no device class, and passing
+    None for those is not the same as leaving them out.
+    """
+    kwargs = {"accuracy_decimals": accuracy, "state_class": "measurement"}
+    if unit is not None:
+        kwargs["unit_of_measurement"] = unit
+    if dclass is not None:
+        kwargs["device_class"] = dclass
+    return kwargs
+
+
 RAW_REGISTER_SCHEMA = sensor.sensor_schema(
     accuracy_decimals=0,
     state_class="measurement",
@@ -57,10 +76,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_RAW_REGISTERS): cv.ensure_list(RAW_REGISTER_SCHEMA),
         **{
             cv.Optional(key): sensor.sensor_schema(
-                unit_of_measurement=unit,
-                accuracy_decimals=accuracy,
-                device_class=dclass,
-                state_class="measurement",
+                **_sensor_kwargs(unit, accuracy, dclass)
             )
             for key, (unit, accuracy, dclass, _register, _scale) in REGISTER_SENSORS.items()
         },

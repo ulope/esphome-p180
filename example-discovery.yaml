@@ -147,6 +147,17 @@ sensor:
     battery_discharge_power:
       name: "Battery Discharge Power"
       device_id: p180_device
+    # Confirmed: reads 2316 -> 231.6V with AC output on, on a 230V grid.
+    ac_out_voltage:
+      name: "AC Output Voltage"
+      device_id: p180_device
+    ac_out_frequency:
+      name: "AC Output Frequency"
+      device_id: p180_device
+    # 0 = off, one value per mode as you cycle the light button.
+    light_mode:
+      name: "Light Mode"
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -154,17 +165,22 @@ sensor:
     #
     # `source:` selects the table: `input` (0x04 status, the default) or
     # `holding` (0x03 settings).
+    # Light mode is now a named sensor (see light_mode above), as are the four
+    # output flags (see binary_sensor below). What is left here is unfinished.
     raw_registers:
-      # Both move exactly in step with the USB output being toggled - confirmed
-      # over five clean transitions on a real P180 Pro.
+      # The whole output status register, handy while mapping the last bit.
       - register: 75
         name: "Reg 75 (output status bits)"
         device_id: p180_device
-      # 0x0837 with USB on, 0x0000 with it off. One frame caught it partway at
-      # 0x0037, so the two bytes update independently: likely hi = status byte
-      # (0x08, the same value reg 75 carries), lo = 0x37 = 55 = 5.5V.
+      # Non-zero while USB / DC / light are on, and NOT affected by AC output:
+      # 0x0800 light, 0x0837 USB, 0x0980 DC. Meaning still unknown - the values
+      # are not a copy of reg 75, so this is not a second status word.
       - register: 54
-        name: "Reg 54 (USB-related)"
+        name: "Reg 54 (DC-side, unidentified)"
+        device_id: p180_device
+      # Reads 0x0010 while AC output is on, and does not respond to the others.
+      - register: 53
+        name: "Reg 53 (AC-side, unidentified)"
         device_id: p180_device
       - register: 66
         source: holding
@@ -181,29 +197,29 @@ binary_sensor:
     grid_power:
       name: "Grid Power"
       device_id: p180_device
+    # Confirmed by toggling each output on its own and diffing reg 75.
+    usb_output:
+      name: "USB Output"
+      device_id: p180_device
+    dc_output:
+      name: "DC Output"
+      device_id: p180_device
+    ac_output:
+      name: "AC Output"
+      device_id: p180_device
+    light:
+      name: "Light"
+      device_id: p180_device
 
-    # Reg 75 is the output status register on the P180 - NOT reg 41. Reg 41 sat
-    # at 0x0000 through five USB transitions, so the Sydpower/P280 bitmask
-    # layout does not apply to this device.
+    # All four output flags are confirmed and are now named sensors above -
+    # no masks to copy. Reg 75 is the status register on the P180, NOT reg 41:
+    # reg 41 sat at 0x0000 through every single toggle.
+    #
+    #   0x0002 light   0x0004 DC   0x0008 USB   0x0010 AC
+    #
+    # 0x0001 is still unaccounted for. If you find what sets it, add it here:
     raw_bits:
-      # Confirmed: 0x0008 tracks the USB output exactly.
-      - register: 75
-        bitmask: 0x0008
-        name: "USB Output Active"
-        device_id: p180_device
-
-      # The DC / AC / light flags are most likely other bits of reg 75. Toggle
-      # each one, watch which bit of 75 moves, then fix the mask and drop the
-      # "(unconfirmed)". These three masks are guesses, nothing more.
-      - register: 75
-        bitmask: 0x0004
-        name: "DC Output Active (unconfirmed)"
-        device_id: p180_device
-      - register: 75
-        bitmask: 0x0002
-        name: "AC Output Active (unconfirmed)"
-        device_id: p180_device
       - register: 75
         bitmask: 0x0001
-        name: "Light On (unconfirmed)"
+        name: "Reg 75 bit 0 (unidentified)"
         device_id: p180_device

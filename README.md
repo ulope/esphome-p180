@@ -25,20 +25,42 @@ registers changed:
 | 13 | 0   | 256 | Battery discharge power (W) — *see caveat below* |
 | 31 | 90  | 90  | Battery % (raw value = %, no scaling) |
 
-Confirmed since, on a P180 Pro on a 50Hz grid, idle on battery:
+Confirmed since on a P180 Pro (50Hz grid), by toggling each output on its own
+and diffing:
+
+**Register 75 is the output status bitmask** — *not* register 41. Reg 41 stayed
+at `0x0000` through every single toggle, so the Sydpower/P280 layout does not
+apply to this device.
+
+| Mask | Output | How it was confirmed |
+|---|---|---|
+| `0x0002` | Light | 2 on/off cycles |
+| `0x0004` | DC output | 2 on/off cycles |
+| `0x0008` | USB output | 5 on/off cycles |
+| `0x0010` | AC output | 3 on/off cycles |
+| `0x0001` | *unidentified* | never seen set |
+
+All four are named binary sensors: `light`, `dc_output`, `usb_output`,
+`ac_output`.
 
 | Register | Observed | Field |
 |---|---|---|
-| 75 | `0x0008` USB on → `0x0000` off | **Output status bits** — 0x0008 = USB output |
-| 54 | `0x0837` USB on → `0x0000` off | USB-related; bytes update independently (caught mid-change at `0x0037`) |
+| 79 | `0`, then one value per mode | **Light mode** enum — named sensor `light_mode` |
+| 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit |
+| 53 | `0x0010` while AC output on | AC-side, unidentified. Does not respond to USB/DC/light |
+| 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
 | 1  | `5` | constant; charge-rate step? |
-| 11 | `500` | AC output frequency — 50.0Hz nominal with AC output off, matching the ×0.1 scaling derived on a 60Hz unit |
-| 72 | wanders 4502–7203 every poll | free-running, correlates with nothing — put it in `ignore_registers` |
+| 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
+| 72 | wanders 4502–7203 every poll | free-running, correlates with nothing — keep it in `ignore_registers` |
 | 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
 
-**The Sydpower/P280 bitmask layout does not apply to this device.** Registers
-41, 39 and 56 sat at `0x0000` through five clean USB on/off transitions. Reg 75
-is the output status register here, not reg 41.
+**Set `change_threshold: 0` while mapping.** The light mode enum steps by one
+(0→1→2→3), and a threshold of 1 suppresses every step — the mode register only
+became visible on the 3→0 transition back to off.
+
+The table is sparse: idle on battery with every output off, only 9 of the 100
+registers are non-zero. Most of the zeros are genuinely idle fields, not a
+parsing problem.
 
 The table is also very sparse: idle on battery with every output off, only 9 of
 the 100 registers are non-zero. Most of the zeros are genuinely idle fields
