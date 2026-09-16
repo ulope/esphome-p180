@@ -57,7 +57,7 @@ finding. Only trust a row as far as its grade.
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
-| 2 | `1002` at the 1000 W switch setting, `501` at 500 W | **AC input / charging power (W)** — `ac_input_power` | **measured** |
+| 2 | `1002` at the 1000 W switch setting, `501` at 500 W | **Charging power (W)** — `charging_power`. AC→battery only, *not* the wall draw | **measured** — cross-checked against the front panel and an external meter |
 | 71 | `34` at 1000 W, `67` at 500 W | **Time to full, minutes** — `time_to_full`. Mirror of reg 72 | **measured** — both rates match to a few minutes assuming ~85% charge efficiency |
 | 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. On battery it is AC output; grid-connected it is −AC input, *even with an output load* | **measured** — equals −reg 2 on every charging sample, including while the AC output supplied 46 W |
 | 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step` | **measured**, but only two switch positions sampled — do not extrapolate a formula |
@@ -106,9 +106,26 @@ separately:
 Reg 90 stays pinned to the input while the output climbs. So the rule is:
 
 - running on battery → reg 90 = **+** AC output power (and equals reg 12)
-- grid connected → reg 90 = **−** AC input power, *regardless* of any AC output load
+- grid connected → reg 90 = **−** *charging* power, *regardless* of any AC output load
 
 Reg 12 is therefore not a mirror of reg 90 — that only holds while discharging.
+
+#### There is no total-wall-draw register
+
+Reg 2 is charging power, not what the station pulls from the socket. With the
+front panel showing **530 W in / 29 W out**, reg 2 read **501** — and 530 − 29 =
+501 exactly. An external power meter agreed with the panel.
+
+So the AC output load is drawn from the grid *on top of* charging, and the wall
+draw has to be summed:
+
+```
+wall draw  =  charging_power (reg 2)  +  output_power (reg 12)
+```
+
+The charge rate itself stays pinned at whatever the rear switch selects — it was
+501 W both with a 29 W output load and with a 46 W one — so the total moves with
+the load, not the charging.
 
 `remaining_time` (reg 72) reads **0** while charging, which is correct — time to
 empty is meaningless then. Use `time_to_full` (reg 71) instead.

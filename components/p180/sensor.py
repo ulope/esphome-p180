@@ -73,18 +73,22 @@ REGISTER_SENSORS = {
     # app: reg 72 read 950-1000 while the app showed 16h, at idle with ~11W of
     # USB draw. Needs no capacity or efficiency calibration.
     "remaining_time": ("min", 0, "duration", 72, 1.0, False),
-    # AC input / charging power. Read 1002 W with the rear switch at 1000 W and
-    # 501 W at 500 W.
-    "ac_input_power": ("W", 0, "power", 2, 1.0, False),
+    # CHARGING power (AC -> battery), not the AC input port. Confirmed against
+    # the front panel and an external meter: panel showed 530 W in / 29 W out
+    # while this read 501, and 530 - 29 = 501. Total wall draw is this plus
+    # output_power; no register reports it directly.
+    # Read 1002 W with the rear switch at 1000 W and 501 W at 500 W.
+    "charging_power": ("W", 0, "power", 2, 1.0, False),
     # Time to full. Matched both charge rates to within a few minutes assuming
     # ~85% charge efficiency.
     "time_to_full": ("min", 0, "duration", 71, 1.0, False),
     # Charge-rate step. Read 5 with the rear switch at 1000 W, 3 at 500 W.
     "charge_rate_step": (None, 0, None, 1, 1.0, False),
     # SIGNED, and not a net figure. On battery it reads AC output power and
-    # equals reg 12. Grid-connected it reads MINUS the AC input power and stays
-    # pinned there even when the AC output is supplying a load - reg 12 went
-    # 0 -> 25 -> 46 W while this held at -501. Read unsigned it publishes ~65000.
+    # equals reg 12. Grid-connected it reads MINUS the CHARGING power (reg 2)
+    # and stays pinned there even when the AC output is supplying a load -
+    # reg 12 went 0 -> 25 -> 46 W while this held at -501. It is NOT minus the
+    # wall draw. Read unsigned it publishes ~65000.
     "ac_power": ("W", 0, "power", 90, 1.0, True),
 }
 

@@ -170,9 +170,12 @@ sensor:
       name: "Remaining Time"
       device_id: p180_device
     # --- charging (AC input plugged in) ---
-    # Reg 2. Read 1002W with the rear switch at 1000W, 501W at 500W.
-    ac_input_power:
-      name: "AC Input Power"
+    # Reg 2 = CHARGING power (AC -> battery), not the wall draw. Panel showed
+    # 530W in / 29W out while this read 501; 530 - 29 = 501. For total wall
+    # draw, sum this with output_power - no register reports it.
+    # Read 1002W with the rear switch at 1000W, 501W at 500W.
+    charging_power:
+      name: "Charging Power"
       device_id: p180_device
     # Reg 71, the mirror of remaining_time. Matched both charge rates assuming
     # ~85% charge efficiency.
@@ -184,7 +187,7 @@ sensor:
       name: "Charge Rate Step"
       device_id: p180_device
     # Reg 90, SIGNED, and NOT a net figure: on battery it is AC output power,
-    # grid-connected it is minus the AC input power and stays there even while
+    # grid-connected it is minus the CHARGING power and stays there even while
     # the AC output supplies a load. Read unsigned this publishes ~65000.
     ac_power:
       name: "AC Power (signed)"
