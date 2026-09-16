@@ -196,8 +196,19 @@ sensor:
         name: "Reg 72 (remaining minutes?)"
         device_id: p180_device
       # AC output power. Mirrors reg 12 exactly, so one of the two is a copy.
+      # Both stayed 0 through a USB-only load, so both are AC-specific - no
+      # register reporting TOTAL output across AC+USB+DC has turned up yet.
       - register: 90
         name: "Reg 90 (AC output power)"
+        device_id: p180_device
+      # Both flipped 0 -> 1 after ~10s at 1760W and did not clear. Fan, thermal
+      # or overload flags? NOTE these are INPUT registers - unrelated to the
+      # Sydpower HOLDING 66/67 (discharge floor / charge ceiling).
+      - register: 66
+        name: "Reg 66 (high-load flag?)"
+        device_id: p180_device
+      - register: 67
+        name: "Reg 67 (high-load flag?)"
         device_id: p180_device
       - register: 66
         source: holding

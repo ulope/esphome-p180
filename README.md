@@ -46,14 +46,15 @@ All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 | Register | Observed | Field |
 |---|---|---|
 | 79 | `0`, then one value per mode | **Light mode** enum — named sensor `light_mode` |
-| 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit |
+| 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit. Sags to 208.9 V at ~1.8kW, recovering instantly when the load drops |
 | 53 | `0x0010` while AC output on | AC-side, unidentified. Does not respond to USB/DC/light |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
+| 66 / 67 | both `0`→`1` after ~10s at 1760 W | high-load flags? Fan, thermal or overload — did not clear. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
 | 1  | `5` | constant; charge-rate step? |
 | 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
 | 72 | falls as load rises; wanders at zero load | **Remaining runtime (minutes?)** — do *not* put this in `ignore_registers` |
 | 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — named sensor `usb_output_power` |
-| 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 exactly |
+| 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 exactly. Both stay `0` under a USB-only load, so both are AC-specific; no *total* output register has turned up |
 | 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
 
 **Set `change_threshold: 0` while mapping.** The light mode enum steps by one
@@ -114,10 +115,23 @@ DC-side battery draw** — not an AC-side mirror as originally suspected. The
 earlier "identical values" reading came from testing with an AC-only load,
 where the two naturally track.
 
+A ~1.8kW load makes the split unmistakable:
+
+| reg 90 (AC out) | reg 78 (USB) | reg 13 (battery) | loss | efficiency |
+|---|---|---|---|---|
+| 1552 W | 16 W | 2016 W | 448 W | 77.8% |
+| 1755 W | 15 W | 2224 W | 454 W | 79.6% |
+| 1757 W | 15 W | 2222 W | 450 W | 79.7% |
+| 1016 W | 13 W | 1357 W | 328 W | 75.8% |
+
+The inverter runs at roughly **78–80%** under load, and reg 13 is unambiguously
+the battery side.
+
 This matters for `battery_efficiency`: since reg 13 already includes conversion
 loss, multiplying by a derate factor **double-counts it**. If you keep the
-computed estimate, `efficiency` should be close to 1.0 and only account for
-usable-vs-nominal capacity.
+computed estimate, `efficiency` should be `1.0` and only account for
+usable-vs-nominal capacity. The default is still `0.85` so existing installs
+do not silently shift — change it deliberately.
 
 **Register 72 is very likely the device's own remaining-runtime estimate, in
 minutes.** It reads as noise only at zero load; under load it falls
@@ -129,6 +143,20 @@ monotonically and settles:
 | 11 W | 4230 | 70.5 h |
 | 37 W | 934 | 15.6 h |
 | 54 W | 670 | 11.2 h |
+
+Under a step load it collapses within two polls, then holds:
+
+| battery draw | reg 72 |
+|---|---|
+| 150 W | 880 |
+| 2016 W | 27 |
+| 2224 W | 16 |
+| 2225 W | 15 |
+
+15 minutes at 2.2kW is the right order for a ~1kWh pack at 61%. But `880` at
+150 W would imply only ~60 W sustained, so the figure is clearly **smoothed
+over recent history** rather than instantaneous — which explains both the lag
+after a step change and the erratic look at idle.
 
 **Confirm it against the AFERIY app under a steady load.** If it matches, it
 replaces the computed `remaining_time` and the `efficiency` knob outright.
