@@ -454,7 +454,16 @@ void P180Component::probe_extended_registers() {
 void P180Component::reset_baseline() {
   this->have_baseline_[REG_SOURCE_INPUT] = false;
   this->have_baseline_[REG_SOURCE_HOLDING] = false;
-  ESP_LOGI(TAG, "Diff baseline cleared - the next frame becomes the new reference");
+  ESP_LOGI(TAG, "===== Baseline cleared - dumping the new reference, then change ONE thing =====");
+  // Dump the table the diff will be measured against. Without this the press
+  // produces no visible output at all, so there is nothing in the log to tell
+  // the "before" from the "after" - which is the whole point of the button.
+  // Only the status table: the settings table refreshes on its own much slower
+  // interval, so dumping it here would print minutes later, out of context.
+  if (this->ready_()) {
+    this->dump_pending_[REG_SOURCE_INPUT] = true;
+    this->send_read_request_(P180_FUNC_READ_INPUT, 0, P180_INPUT_REG_COUNT);
+  }
 }
 
 void P180Button::press_action() {

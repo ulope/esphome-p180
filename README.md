@@ -81,6 +81,62 @@ Use `ignore_registers:` to silence registers that move on their own (power,
 SoC) so a deliberate change stands out, and `change_threshold: 1` to filter
 ±1 jitter on analog readings.
 
+### Keeping the log readable
+
+Every ESPHome entity logs its state on **every publish** — once per poll, per
+entity, whether or not the value changed. At a 5s interval that is a wall of
+
+```
+[S][sensor]: 'AC Input Voltage' >> 0.0 V
+[S][sensor]: 'Battery' >> 64 %
+```
+
+scrolling past continuously, which buries the p180 lines you are trying to
+read.
+
+Those state lines are `VERBOSE`, and every bit of discovery output — register
+dumps, change lines — is `DEBUG`. So the fix is simply **don't run the logger
+at `VERBOSE`**:
+
+```yaml
+logger:
+  level: DEBUG
+  logs:
+    p180: DEBUG
+```
+
+At `DEBUG` the entity state logging compiles out entirely and the log contains
+only p180 output. Nothing you need for discovery is lost.
+
+If you do need the p180 frame-level diagnostics (reassembly, stray
+notifications, CRC detail), raising the global level to `VERBOSE` un-mutes
+*every* component — `ble_client` and `esp32_ble_tracker` are far noisier than
+the sensors were. A per-tag level can only ever be **less** verbose than the
+global one, so mute the loud ones explicitly:
+
+```yaml
+logger:
+  level: VERBOSE
+  logs:
+    p180: VERBOSE
+    sensor: INFO          # per-publish entity state - the main offender
+    binary_sensor: INFO
+    button: INFO
+    number: INFO
+    ble_client: INFO
+    esp32_ble_tracker: INFO
+    api: INFO
+    wifi: INFO
+```
+
+**Reset Baseline** prints a banner and dumps the table the next diff will be
+measured against, so there is always a visible "before" to compare against:
+
+```
+[I][p180]: ===== Baseline cleared - dumping the new reference, then change ONE thing =====
+[D][p180]: input regs 000-015: ...
+```
+
 ### Probe buttons
 
 All four are reads; none of them writes to the station.
