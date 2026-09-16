@@ -86,6 +86,10 @@ struct RegisterSensor {
   uint16_t reg;
   float scale;
   RegSource source;
+  // Some registers are two's-complement. Register 90 is the clearest case: it
+  // reads AC output power while discharging and the NEGATIVE of the AC input
+  // power while charging, so read unsigned it jumps to ~65000 on the charger.
+  bool is_signed;
 };
 
 // A binary sensor bound to one bit (or bit group) of one register.
@@ -123,8 +127,8 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   void add_ignored_register(uint16_t reg) { this->ignored_registers_.push_back(reg); }
 
   // --- Generic register -> entity binding -------------------------------
-  void add_register_sensor(uint16_t reg, float scale, RegSource source, sensor::Sensor *s) {
-    this->register_sensors_.push_back(RegisterSensor{s, reg, scale, source});
+  void add_register_sensor(uint16_t reg, float scale, RegSource source, bool is_signed, sensor::Sensor *s) {
+    this->register_sensors_.push_back(RegisterSensor{s, reg, scale, source, is_signed});
   }
   void add_register_bit_sensor(uint16_t reg, uint16_t mask, RegSource source, binary_sensor::BinarySensor *s) {
     this->register_bit_sensors_.push_back(RegisterBitSensor{s, reg, mask, source});

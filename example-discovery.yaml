@@ -163,10 +163,30 @@ sensor:
     usb_output_power:
       name: "USB Output Power"
       device_id: p180_device
-    # Register 72 - the station's own estimate, confirmed against the AFERIY
-    # app. No capacity or efficiency calibration needed.
+    # Register 72 - the station's own estimate, confirmed against the unit's
+    # own display. No capacity or efficiency calibration needed. Reads 0 while
+    # charging, when time-to-empty is meaningless.
     remaining_time:
       name: "Remaining Time"
+      device_id: p180_device
+    # --- charging (AC input plugged in) ---
+    # Reg 2. Read 1002W with the rear switch at 1000W, 501W at 500W.
+    ac_input_power:
+      name: "AC Input Power"
+      device_id: p180_device
+    # Reg 71, the mirror of remaining_time. Matched both charge rates assuming
+    # ~85% charge efficiency.
+    time_to_full:
+      name: "Time To Full"
+      device_id: p180_device
+    # Reg 1. Read 5 at the 1000W switch position, 3 at 500W.
+    charge_rate_step:
+      name: "Charge Rate Step"
+      device_id: p180_device
+    # Reg 90, SIGNED: positive = AC output power, negative = AC input power.
+    # Read unsigned this publishes ~65000 while charging.
+    ac_power:
+      name: "AC Power (signed)"
       device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
@@ -192,11 +212,9 @@ sensor:
       - register: 53
         name: "Reg 53 (AC-side, unidentified)"
         device_id: p180_device
-      # AC output power. Mirrors reg 12 exactly, so one of the two is a copy.
-      # Both stayed 0 through a USB-only load, so both are AC-specific - no
-      # register reporting TOTAL output across AC+USB+DC has turned up yet.
-      - register: 90
-        name: "Reg 90 (AC output power)"
+      # Reg 37: 0x4000 when idle, 0x8000/0x8040 alternating while charging.
+      - register: 37
+        name: "Reg 37 (charge status bits?)"
         device_id: p180_device
       # AC OUTPUT energy since power-on, 10Wh (0.01 kWh) per count - confirmed
       # at three different load levels. Rises only under AC load and holds when

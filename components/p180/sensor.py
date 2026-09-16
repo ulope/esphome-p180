@@ -8,6 +8,7 @@ from . import (
     CONF_P180_ID,
     CONF_REGISTER,
     CONF_SCALE,
+    CONF_SIGNED,
     CONF_SOURCE,
     MAX_REGISTER,
     REAL_REGISTER_COUNT,
@@ -42,36 +43,47 @@ CONF_RAW_REGISTERS = "raw_registers"
 # Named sensors, each bound to one status (0x04) register.
 # Offsets confirmed by diffing an AC-connected dump against an on-battery dump on
 # a real P180 (Aug 2026) - NOT the same offsets as the P310/P280 maps.
-# key -> (unit, accuracy_decimals, device_class, register, scale)
+# key -> (unit, accuracy_decimals, device_class, register, scale, signed)
 #
 # To promote a newly identified register to a first-class sensor, add one line
 # here. No C++ change is needed.
 REGISTER_SENSORS = {
-    "ac_in_voltage": ("V", 1, "voltage", 8, 0.1),
-    "ac_in_frequency": ("Hz", 2, "frequency", 9, 0.01),
-    "ac_out_voltage": ("V", 1, "voltage", 10, 0.1),
-    "ac_out_frequency": ("Hz", 1, "frequency", 11, 0.1),
-    "output_power": ("W", 0, "power", 12, 1.0),
+    "ac_in_voltage": ("V", 1, "voltage", 8, 0.1, False),
+    "ac_in_frequency": ("Hz", 2, "frequency", 9, 0.01, False),
+    "ac_out_voltage": ("V", 1, "voltage", 10, 0.1, False),
+    "ac_out_frequency": ("Hz", 1, "frequency", 11, 0.1, False),
+    "output_power": ("W", 0, "power", 12, 1.0, False),
     # WARNING: reads 0 with all outputs off, so it never includes the station's
     # own consumption. With AC output energised it carries an offset that is
     # steady within a session but varies wildly BETWEEN them - 12-15W in one
     # capture, 137-155W in others - and the high values are refuted as real draw
     # by a 13-minute SoC hold. It is genuinely watts and the error is additive,
     # but do not feed this into an energy dashboard unadjusted.
-    "battery_discharge_power": ("W", 0, "power", 13, 1.0),
+    "battery_discharge_power": ("W", 0, "power", 13, 1.0, False),
     # Raw value IS the percent on this device - no scaling.
-    "battery_percent": ("%", 0, "battery", 31, 1.0),
+    "battery_percent": ("%", 0, "battery", 31, 1.0, False),
     # Light mode enum: 0 = off, then one value per mode as you cycle the button.
     # Confirmed on a P180 Pro. NOTE: it steps by 1, so it is invisible unless
     # `change_threshold` is 0.
-    "light_mode": (None, 0, None, 79, 1.0),
+    "light_mode": (None, 0, None, 79, 1.0, False),
     # USB output power. Tracked a USB-C PD load exactly on a P180 Pro, and is
     # separate from output_power (reg 12), which stays 0 for a USB-only load.
-    "usb_output_power": ("W", 0, "power", 78, 1.0),
+    "usb_output_power": ("W", 0, "power", 78, 1.0, False),
     # The station's OWN remaining-runtime estimate. Confirmed against the AFERIY
     # app: reg 72 read 950-1000 while the app showed 16h, at idle with ~11W of
     # USB draw. Needs no capacity or efficiency calibration.
-    "remaining_time": ("min", 0, "duration", 72, 1.0),
+    "remaining_time": ("min", 0, "duration", 72, 1.0, False),
+    # AC input / charging power. Read 1002 W with the rear switch at 1000 W and
+    # 501 W at 500 W.
+    "ac_input_power": ("W", 0, "power", 2, 1.0, False),
+    # Time to full. Matched both charge rates to within a few minutes assuming
+    # ~85% charge efficiency.
+    "time_to_full": ("min", 0, "duration", 71, 1.0, False),
+    # Charge-rate step. Read 5 with the rear switch at 1000 W, 3 at 500 W.
+    "charge_rate_step": (None, 0, None, 1, 1.0, False),
+    # SIGNED: positive while discharging (AC output power), negative while
+    # charging (AC input power). Read unsigned it would publish ~65000.
+    "ac_power": ("W", 0, "power", 90, 1.0, True),
 }
 
 # Expose any register without touching C++ - the point of the discovery workflow.
@@ -99,6 +111,7 @@ RAW_REGISTER_SCHEMA = sensor.sensor_schema(
         cv.Required(CONF_REGISTER): _register_number,
         cv.Optional(CONF_SOURCE, default="input"): cv.enum(REG_SOURCES, lower=True),
         cv.Optional(CONF_SCALE, default=1.0): cv.float_,
+        cv.Optional(CONF_SIGNED, default=False): cv.boolean,
     }
 )
 
@@ -110,7 +123,7 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Optional(key): sensor.sensor_schema(
                 **_sensor_kwargs(unit, accuracy, dclass)
             )
-            for key, (unit, accuracy, dclass, _register, _scale) in REGISTER_SENSORS.items()
+            for key, (unit, accuracy, dclass, _reg, _scale, _signed) in REGISTER_SENSORS.items()
         },
     }
 )
@@ -119,15 +132,23 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     parent = await cg.get_variable(config[CONF_P180_ID])
 
-    for key, (_unit, _accuracy, _dclass, register, scale) in REGISTER_SENSORS.items():
+    for key, (_unit, _accuracy, _dclass, register, scale, signed) in REGISTER_SENSORS.items():
         if key in config:
             sens = await sensor.new_sensor(config[key])
-            cg.add(parent.add_register_sensor(register, scale, REG_SOURCES["input"], sens))
+            cg.add(
+                parent.add_register_sensor(
+                    register, scale, REG_SOURCES["input"], signed, sens
+                )
+            )
 
     for conf in config.get(CONF_RAW_REGISTERS, []):
         sens = await sensor.new_sensor(conf)
         cg.add(
             parent.add_register_sensor(
-                conf[CONF_REGISTER], conf[CONF_SCALE], conf[CONF_SOURCE], sens
+                conf[CONF_REGISTER],
+                conf[CONF_SCALE],
+                conf[CONF_SOURCE],
+                conf[CONF_SIGNED],
+                sens,
             )
         )

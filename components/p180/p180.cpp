@@ -377,7 +377,9 @@ void P180Component::publish_(RegSource source) {
                static_cast<unsigned>(entry.reg), static_cast<unsigned>(count));
       continue;
     }
-    entry.sensor->publish_state(regs[entry.reg] * entry.scale);
+    const float raw =
+        entry.is_signed ? static_cast<float>(static_cast<int16_t>(regs[entry.reg])) : static_cast<float>(regs[entry.reg]);
+    entry.sensor->publish_state(raw * entry.scale);
   }
 
   for (auto &entry : this->register_bit_sensors_) {

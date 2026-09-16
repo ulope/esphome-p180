@@ -42,6 +42,7 @@ CONF_CHANGE_THRESHOLD = "change_threshold"
 CONF_REGISTER = "register"
 CONF_SOURCE = "source"
 CONF_SCALE = "scale"
+CONF_SIGNED = "signed"
 CONF_BITMASK = "bitmask"
 
 CONFIG_SCHEMA = (

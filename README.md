@@ -57,10 +57,14 @@ finding. Only trust a row as far as its grade.
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
+| 2 | `1002` at the 1000 W switch setting, `501` at 500 W | **AC input / charging power (W)** — `ac_input_power` | **measured** |
+| 71 | `34` at 1000 W, `67` at 500 W | **Time to full, minutes** — `time_to_full`. Mirror of reg 72 | **measured** — both rates match to a few minutes assuming ~85% charge efficiency |
+| 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. Positive = output, negative = input | **measured** — equals −reg 2 exactly on every charging sample |
+| 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step` | **measured**, but only two switch positions sampled — do not extrapolate a formula |
+| 37 | `0x4000` idle, `0x8000`/`0x8040` charging | charge status bitmask? | **guess** — only that it changes with charging |
+| 53 | `0x10` AC out, `0x68` AC in, `0x78` both | additive status bitmask | **inferred** — the three values add up, but no bit is individually confirmed |
 | 13 | `0` with all outputs off; an offset of 12–155 W with AC energised | **Output-attributed power, watts** — never includes station self-consumption; the AC-idle offset varies *between sessions* and is sometimes plain wrong | **measured** — unit, additivity, and 0-with-outputs-off; the high idle figures are refuted by a 13-minute SoC hold. Mechanism **unknown** |
-| 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
-| 1 | `5` | charge-rate step? | **guess** — constant in every capture |
 | 97–99 | `0x1901 0x0203 0x0405` | version/serial info? | **guess** — constant in every capture |
 
 Nothing here has been tested across a firmware update, a charge cycle, or a
@@ -78,6 +82,25 @@ registers.
 
 The status bitmask is additive: with USB and AC both on, reg 75 reads
 `0x0018` = `0x0008 | 0x0010`.
+
+### Charging
+
+Plugging in AC input brings a second set of registers to life. Reg 8 and reg 9
+jump to the real mains figures (233.0 V, 50.00 Hz), which is what drives the
+`grid_power` binary sensor.
+
+**Register 90 is signed.** While discharging it reads AC output power; while
+charging it reads the *negative* of the AC input power, matching −reg 2 exactly
+on every sample. Read as unsigned it publishes ~65000 the moment the charger is
+connected, so `ac_power` sets `signed: true`. The same option is available on
+`raw_registers:` entries.
+
+Reg 12 is **not** a mirror of reg 90 after all — that only holds while
+discharging. With the charger connected, reg 12 stays at `0` while reg 90 goes
+to −1002.
+
+`remaining_time` (reg 72) reads **0** while charging, which is correct — time to
+empty is meaningless then. Use `time_to_full` (reg 71) instead.
 
 ### Registers above 99 are not telemetry
 
