@@ -49,7 +49,7 @@ All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 | 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit. Sags to 208.9 V at ~1.8kW, recovering instantly when the load drops |
 | 53 | `0x0010` while AC output on | AC-side, unidentified. Does not respond to USB/DC/light |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
-| 66 / 67 | increment together while an AC load runs | **Monotonic counter**, roughly 10 Wh per count. Holds when the load stops, never decreases. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
+| 66 / 67 | increment together while an AC load runs | **Cumulative AC output energy, 10 Wh (0.01 kWh) per count.** Monotonic, holds when the load stops, never decreases. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
 | 1  | `5` | constant; charge-rate step? |
 | 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
 | 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — confirmed against the app. Read by `remaining_time` |
@@ -91,6 +91,22 @@ warning.
 Note the probe's own log line is printed *before* the request goes out — it
 describes what to look for, it is not a verdict. The dump that follows, and the
 `input register count changed 100 -> 160` line, are the actual result.
+
+### The 66/67 counter is 10 Wh per count
+
+A controlled run — ~1092 W of AC load held for about two minutes — pins the
+unit. With a 5 s poll interval you can only observe an interval as a multiple of
+5 s, and every observation lands on one of the two values that allows:
+
+| run | AC output | 10 Wh takes | 5 s-sampled | observed |
+|---|---|---|---|---|
+| ~1092 W | 33.0 s | 30 or 35 s | 30, 35, 30 |
+| ~1320 W | 27.3 s | 25 or 30 s | 30, 25 |
+| ~1568 W | 23.0 s | 20 or 25 s | 25 |
+
+It counts **AC output** energy, not battery energy: a battery-side basis
+(÷0.85) predicts 28.0 s and 23.2 s for the first two rows, consistently faster
+than observed.
 
 **Not found: any fan indicator.** With the fans audibly cycling on and off
 about three minutes after a sustained 1.3kW load, the only registers that moved
@@ -178,10 +194,22 @@ offset that only appears with AC output on. Note reg 13 matches USB power
 *exactly* with AC output off, so the register is sound — it is specifically the
 AC-idle case that misbehaves.
 
-**The test that settles it:** leave the station idle with AC output on for half
-an hour and watch the `Battery` percentage. At 148 W a ~1 kWh pack loses about
-1% every four minutes, which is unmissable. If SoC barely moves, the standby
-figure is wrong and the ~150 W term in the model above is an artifact.
+A second, independent line of evidence points the same way. Reg 72 read 23 min
+at 1092 W of AC output with SoC at 55%:
+
+| assumed battery draw | implies remaining |
+|---|---|
+| 1285 W (1092 ÷ 0.85, no standby) | 492 Wh |
+| 1435 W (plus 150 W standby) | 550 Wh |
+
+Earlier load points gave ~554 Wh at ~60.5% SoC, which scales to ~504 Wh at 55%.
+The **no-standby** figure matches; adding 150 W overshoots by about 10%.
+
+**The test that would settle it outright:** leave the station idle with AC
+output on for half an hour and watch the `Battery` percentage. At 148 W a ~1 kWh
+pack loses about 1% every four minutes, which is unmissable. If SoC barely
+moves, the ~150 W term in the model above is definitively an artifact of reg 13
+rather than a real draw.
 
 **Register 72 is the device's own remaining-runtime estimate, in minutes** —
 confirmed against the AFERIY app, which showed **16 h** while reg 72 read

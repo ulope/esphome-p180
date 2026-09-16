@@ -198,11 +198,11 @@ sensor:
       - register: 90
         name: "Reg 90 (AC output power)"
         device_id: p180_device
-      # A monotonic counter, roughly 10Wh per count: increments only while an
-      # AC load runs, holds when it stops, never decreases. NOT the fan - it
-      # stopped counting three minutes before the fans audibly ran. NOTE these
-      # are INPUT registers, unrelated to the Sydpower HOLDING 66/67
-      # (discharge floor / charge ceiling).
+      # Cumulative AC OUTPUT energy, 10Wh (0.01 kWh) per count - confirmed at
+      # three different load levels. Monotonic; holds when the load stops and
+      # never decreases. NOT the fan: it stopped counting three minutes before
+      # the fans audibly ran. NOTE these are INPUT registers, unrelated to the
+      # Sydpower HOLDING 66/67 (discharge floor / charge ceiling).
       - register: 66
         name: "Reg 66 (high-load flag?)"
         device_id: p180_device
