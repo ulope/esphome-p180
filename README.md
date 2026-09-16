@@ -49,7 +49,7 @@ All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 | 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit. Sags to 208.9 V at ~1.8kW, recovering instantly when the load drops |
 | 53 | `0x0010` while AC output on | AC-side, unidentified. Does not respond to USB/DC/light |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
-| 66 / 67 | both `0`→`1` after ~10s at 1760 W | high-load flags? Fan, thermal or overload — did not clear. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
+| 66 / 67 | increment together while an AC load runs | **Monotonic counter**, roughly 10 Wh per count. Holds when the load stops, never decreases. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
 | 1  | `5` | constant; charge-rate step? |
 | 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
 | 72 | falls as load rises; wanders at zero load | **Remaining runtime (minutes?)** — do *not* put this in `ignore_registers` |
@@ -68,6 +68,11 @@ registers.
 
 The status bitmask is additive: with USB and AC both on, reg 75 reads
 `0x0018` = `0x0008 | 0x0010`.
+
+**Not found: any fan indicator.** With the fans audibly cycling on and off
+about three minutes after a sustained 1.3kW load, the only registers that moved
+in that window were 8, 10, 72 and 78 — all already identified. Fan state does
+not appear anywhere in registers 0–99.
 
 The table is sparse: idle on battery with every output off, only 9 of the 100
 registers are non-zero. Most of the zeros are genuinely idle fields, not a
@@ -144,6 +149,14 @@ monotonically and settles:
 | 37 W | 934 | 15.6 h |
 | 54 W | 670 | 11.2 h |
 
+It lines up with a ~1024 Wh pack — the component's own default — to within
+about 10%, measured against the battery-side draw:
+
+| SoC | battery draw | naive | reg 72 |
+|---|---|---|---|
+| 61% | 2222 W | 17 min | 15 |
+| 60% | 1660 W | 22 min | 20 |
+
 Under a step load it collapses within two polls, then holds:
 
 | battery draw | reg 72 |
@@ -153,10 +166,11 @@ Under a step load it collapses within two polls, then holds:
 | 2224 W | 16 |
 | 2225 W | 15 |
 
-15 minutes at 2.2kW is the right order for a ~1kWh pack at 61%. But `880` at
-150 W would imply only ~60 W sustained, so the figure is clearly **smoothed
-over recent history** rather than instantaneous — which explains both the lag
-after a step change and the erratic look at idle.
+and when the load is removed it climbs back gradually rather than jumping —
+`20 → 63 → 685 → 825 → 857 → 892` over about 90 seconds. So the figure is
+**smoothed over recent history** rather than instantaneous, which explains both
+the lag after a step change and the erratic look at idle. That smoothing is why
+it was mistaken for noise in the idle-only captures.
 
 **Confirm it against the AFERIY app under a steady load.** If it matches, it
 replaces the computed `remaining_time` and the `efficiency` knob outright.

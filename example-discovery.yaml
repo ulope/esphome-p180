@@ -201,9 +201,11 @@ sensor:
       - register: 90
         name: "Reg 90 (AC output power)"
         device_id: p180_device
-      # Both flipped 0 -> 1 after ~10s at 1760W and did not clear. Fan, thermal
-      # or overload flags? NOTE these are INPUT registers - unrelated to the
-      # Sydpower HOLDING 66/67 (discharge floor / charge ceiling).
+      # A monotonic counter, roughly 10Wh per count: increments only while an
+      # AC load runs, holds when it stops, never decreases. NOT the fan - it
+      # stopped counting three minutes before the fans audibly ran. NOTE these
+      # are INPUT registers, unrelated to the Sydpower HOLDING 66/67
+      # (discharge floor / charge ceiling).
       - register: 66
         name: "Reg 66 (high-load flag?)"
         device_id: p180_device
