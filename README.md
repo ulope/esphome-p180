@@ -50,12 +50,12 @@ finding. Only trust a row as far as its grade.
 
 | Register | Observed | Field | Evidence |
 |---|---|---|---|
-| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — read by `remaining_time` | **measured** — app showed 16 h against reg 72's 15.8–16.7 h |
+| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — read by `remaining_time` | **measured** — matches the figure on the station's own display |
 | 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — `usb_output_power` | **measured** |
 | 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 | **measured** |
 | 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6 V on a 230 V grid; sags to 208.9 V at ~1.8 kW | **measured** |
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
-| 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** (unit, reset behaviour); *inferred* that it is AC rather than total output |
+| 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
 | 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
@@ -208,22 +208,50 @@ offset that only appears with AC output on. Note reg 13 matches USB power
 *exactly* with AC output off, so the register is sound — it is specifically the
 AC-idle case that misbehaves.
 
-A second, independent line of evidence points the same way. Reg 72 read 23 min
-at 1092 W of AC output with SoC at 55%:
+**Reg 72 checked against itself** is the strongest evidence, because it needs no
+assumption about pack size. At the same state of charge (48–50%), the station
+reported:
 
-| assumed battery draw | implies remaining |
+| condition | reg 72 |
 |---|---|
-| 1285 W (1092 ÷ 0.85, no standby) | 492 Wh |
-| 1435 W (plus 150 W standby) | 550 Wh |
+| idle, AC output on | ~1150 min |
+| 1090 W AC load | ~21.5 min |
 
-Earlier load points gave ~554 Wh at ~60.5% SoC, which scales to ~504 Wh at 55%.
-The **no-standby** figure matches; adding 150 W overshoots by about 10%.
+The remaining energy is the same in both cases, so the two draws must differ by
+a factor of 1150 ÷ 21.5 = **53.5**. Working backwards from the loaded draw:
 
-**The test that would settle it outright:** leave the station idle with AC
-output on for half an hour and watch the `Battery` percentage. At 148 W a ~1 kWh
-pack loses about 1% every four minutes, which is unmissable. If SoC barely
-moves, the ~150 W term in the model above is definitively an artifact of reg 13
-rather than a real draw.
+| loaded draw used | implied idle draw |
+|---|---|
+| 1405 W (reg 13 as-is) | 26.3 W |
+| 1268 W (reg 13 minus the offset) | 23.7 W |
+
+Reg 13 reports **137 W** at idle. The station's own estimate is self-consistent
+only at roughly **24–26 W** — about a fifth of that.
+
+Reg 13 is otherwise well-behaved: switching USB on added exactly its 8 W to the
+reading, and switching it off removed exactly 8 W again. So it is a real power
+measurement carrying a constant offset that appears only when AC output is
+energised, not a broken register.
+
+**The test that would settle it outright:** leave the station idle with AC output
+on for half an hour and watch the `Battery` percentage.
+
+| if the real idle draw is | SoC falls | over 30 min |
+|---|---|---|
+| 137 W | 1% every 4.3 min | ~7% |
+| 24 W | 1% every 24 min | ~1.2% |
+
+Those are trivially distinguishable. Captures so far only cover a few minutes of
+idle, which is not long enough to tell them apart.
+
+### Pack capacity, roughly
+
+Under a 1090 W load, SoC fell 50% → 49% → 48% in 25 s per step. At the loaded
+draw that is **8.8–9.8 Wh per 1%**, so a pack of roughly **0.9–1.0 kWh**,
+consistent with the 1024 Wh figure usually quoted for this model.
+
+Treat that as an order-of-magnitude check, not a measurement: SoC has 1%
+resolution, so each crossing carries up to a full percent of timing error.
 
 **Register 72 is the device's own remaining-runtime estimate, in minutes** —
 confirmed against the AFERIY app, which showed **16 h** while reg 72 read
