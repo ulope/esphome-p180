@@ -183,8 +183,9 @@ sensor:
     charge_rate_step:
       name: "Charge Rate Step"
       device_id: p180_device
-    # Reg 90, SIGNED: positive = AC output power, negative = AC input power.
-    # Read unsigned this publishes ~65000 while charging.
+    # Reg 90, SIGNED, and NOT a net figure: on battery it is AC output power,
+    # grid-connected it is minus the AC input power and stays there even while
+    # the AC output supplies a load. Read unsigned this publishes ~65000.
     ac_power:
       name: "AC Power (signed)"
       device_id: p180_device

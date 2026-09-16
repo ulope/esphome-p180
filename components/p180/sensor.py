@@ -81,8 +81,10 @@ REGISTER_SENSORS = {
     "time_to_full": ("min", 0, "duration", 71, 1.0, False),
     # Charge-rate step. Read 5 with the rear switch at 1000 W, 3 at 500 W.
     "charge_rate_step": (None, 0, None, 1, 1.0, False),
-    # SIGNED: positive while discharging (AC output power), negative while
-    # charging (AC input power). Read unsigned it would publish ~65000.
+    # SIGNED, and not a net figure. On battery it reads AC output power and
+    # equals reg 12. Grid-connected it reads MINUS the AC input power and stays
+    # pinned there even when the AC output is supplying a load - reg 12 went
+    # 0 -> 25 -> 46 W while this held at -501. Read unsigned it publishes ~65000.
     "ac_power": ("W", 0, "power", 90, 1.0, True),
 }
 
