@@ -129,8 +129,24 @@ A ~1.8kW load makes the split unmistakable:
 | 1757 W | 15 W | 2222 W | 450 W | 79.7% |
 | 1016 W | 13 W | 1357 W | 328 W | 75.8% |
 
-The inverter runs at roughly **78–80%** under load, and reg 13 is unambiguously
-the battery side.
+Reg 13 is unambiguously the battery side. The 78–80% in that last column is
+*overall* efficiency, not conversion efficiency — separating the two gives a
+model that fits idle and full load alike:
+
+```
+reg 13  ≈  AC_output / 0.85  +  150 W standby
+```
+
+| AC out | predicted reg 13 | actual | error |
+|---|---|---|---|
+| 0 W | 150 | 148 | +2 |
+| 1016 W | 1345 | 1357 | −12 |
+| 1552 W | 1976 | 2016 | −40 |
+| 1757 W | 2217 | 2222 | −5 |
+
+So the inverter converts at about **85%** and carries a **~150 W standby draw**
+whenever AC output is enabled. That standby is high enough to matter: leaving
+AC output on with nothing plugged in costs roughly 3.6 kWh/day.
 
 This matters for `battery_efficiency`: since reg 13 already includes conversion
 loss, multiplying by a derate factor **double-counts it**. If you keep the
@@ -138,26 +154,10 @@ computed estimate, `efficiency` should be `1.0` and only account for
 usable-vs-nominal capacity. The default is still `0.85` so existing installs
 do not silently shift — change it deliberately.
 
-**Register 72 is very likely the device's own remaining-runtime estimate, in
-minutes.** It reads as noise only at zero load; under load it falls
-monotonically and settles:
+**Register 72 behaves like the device's own remaining-runtime estimate, in
+minutes** — but its absolute value only reconciles under load.
 
-| battery draw | reg 72 | = |
-|---|---|---|
-| 0 W | 4502–7203, wandering | unstable, as a runtime estimate is at ~0 load |
-| 11 W | 4230 | 70.5 h |
-| 37 W | 934 | 15.6 h |
-| 54 W | 670 | 11.2 h |
-
-It lines up with a ~1024 Wh pack — the component's own default — to within
-about 10%, measured against the battery-side draw:
-
-| SoC | battery draw | naive | reg 72 |
-|---|---|---|---|
-| 61% | 2222 W | 17 min | 15 |
-| 60% | 1660 W | 22 min | 20 |
-
-Under a step load it collapses within two polls, then holds:
+Under a step load it collapses within two polls, then holds rock steady:
 
 | battery draw | reg 72 |
 |---|---|
@@ -166,11 +166,31 @@ Under a step load it collapses within two polls, then holds:
 | 2224 W | 16 |
 | 2225 W | 15 |
 
-and when the load is removed it climbs back gradually rather than jumping —
-`20 → 63 → 685 → 825 → 857 → 892` over about 90 seconds. So the figure is
-**smoothed over recent history** rather than instantaneous, which explains both
-the lag after a step change and the erratic look at idle. That smoothing is why
-it was mistaken for noise in the idle-only captures.
+Multiply it by the battery draw and the two load points agree almost exactly,
+implying ~554 Wh remaining — which at 60% SoC is a ~920 Wh pack, close to the
+component's 1024 Wh default:
+
+| battery draw | reg 72 | product | = |
+|---|---|---|---|
+| 1660 W | 20 | 33 200 W·min | 553 Wh |
+| 2222 W | 15 | 33 330 W·min | 556 Wh |
+| 150 W (idle) | 950 | 142 500 W·min | **2375 Wh** ✗ |
+
+**The idle point is 4.3× off and does not fit.** For reg 72 to read ~950 at
+idle, the draw would have to be ~39 W, but reg 13 reports 148 W. So the
+device's own estimate is not using reg 13's idle figure — it either discounts
+the inverter standby or measures battery current separately at low load.
+
+When the load is removed it climbs back over roughly 40 seconds
+(`20 → 63 → 685 → 825 → 892 → 905`) and then **plateaus** at 860–1010,
+oscillating there with no further trend across eight minutes of idle. So the
+smoothing window is short, and the idle reading is a genuine steady-state value
+rather than a lagging one — an earlier guess that a long averaging window
+explained the idle figure does not survive this capture.
+
+The oscillation at idle tracks small changes in USB draw inversely, which is
+consistent with a live estimate; it is the *scale* at idle that is unexplained,
+not the behaviour.
 
 **Confirm it against the AFERIY app under a steady load.** If it matches, it
 replaces the computed `remaining_time` and the `efficiency` knob outright.
