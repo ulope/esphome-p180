@@ -1,0 +1,136 @@
+# P180 register discovery config.
+#
+# Flash this once, then do every experiment from the Home Assistant UI and the
+# ESPHome log - no recompile needed per register. See the "Register discovery"
+# section of the README for the experiment matrix.
+#
+# This config is read-only. The component never issues Modbus writes.
+
+esphome:
+  name: p180discovery
+  friendly_name: P180 Discovery
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+api:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+  level: DEBUG
+  logs:
+    # DEBUG is the level the register dumps and the change lines are logged at.
+    p180: DEBUG
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/enelson493/esphome-p180
+      ref: main
+    components: [p180]
+    refresh: 0s
+
+ble_client:
+  - mac_address: "AA:BB:CC:DD:EE:FF"   # your P180's BLE MAC
+    id: p180_ble
+
+p180:
+  id: p180_main
+  ble_client_id: p180_ble
+  polling_interval: 5s
+  settings_interval: 60s
+
+  # --- discovery options ---
+  # Log every register that changed since the previous frame. This is the
+  # workhorse: press "Reset Baseline", change exactly one thing on the station,
+  # and read off which register moved.
+  log_changes: true
+  # Registers that move on their own and would otherwise drown out the signal.
+  # Add to this list as you find more noisy ones.
+  ignore_registers: [12, 13, 31]
+  # Ignore +/-1 jitter on analog readings.
+  change_threshold: 1
+  # Set true to dump the whole table every poll. Very noisy - the dump buttons
+  # below are usually what you want instead.
+  debug_dump: false
+
+button:
+  - platform: p180
+    p180_id: p180_main
+    action: reset_baseline
+    name: "Reset Baseline"
+  - platform: p180
+    p180_id: p180_main
+    action: dump_input
+    name: "Dump Status Registers"
+  - platform: p180
+    p180_id: p180_main
+    action: dump_holding
+    name: "Dump Settings Registers"
+  - platform: p180
+    p180_id: p180_main
+    action: probe_extended
+    name: "Probe Extended Registers"
+
+sensor:
+  # Known-good sensors, so you can sanity check against the AFERIY app.
+  - platform: p180
+    p180_id: p180_main
+    ac_in_voltage:
+      name: "AC Input Voltage"
+    ac_in_frequency:
+      name: "AC Input Frequency"
+    battery_percent:
+      name: "Battery"
+    output_power:
+      name: "Output Power"
+    battery_discharge_power:
+      name: "Battery Discharge Power"
+
+    # Candidate registers under investigation. Add an entry here the moment a
+    # diff line points at something interesting - no C++ change, no reflash of
+    # the component source, just a recompile of this YAML.
+    #
+    # `source:` selects the table: `input` (0x04 status, the default) or
+    # `holding` (0x03 settings).
+    raw_registers:
+      - register: 41
+        name: "Reg 41 (status bitmask candidate)"
+      - register: 39
+        name: "Reg 39 (total output power candidate)"
+      - register: 56
+        name: "Reg 56 (SoC candidate)"
+        scale: 0.1
+      - register: 66
+        source: holding
+        name: "Holding 66 (discharge floor candidate)"
+        scale: 0.1
+
+binary_sensor:
+  - platform: p180
+    p180_id: p180_main
+    connected:
+      name: "P180 Connected"
+    grid_power:
+      name: "Grid Power"
+
+    # Once the status bitmask register is confirmed, the output flags are pure
+    # YAML. Masks below are the Sydpower/P280 layout - hypotheses, not facts.
+    raw_bits:
+      - register: 41
+        bitmask: 0x0800
+        name: "AC Output Active (unconfirmed)"
+      - register: 41
+        bitmask: 0x0400
+        name: "DC Output Active (unconfirmed)"
+      - register: 41
+        bitmask: 0x0200
+        name: "USB Output Active (unconfirmed)"
+      - register: 41
+        bitmask: 0x1000
+        name: "Light On (unconfirmed)"
