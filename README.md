@@ -51,12 +51,22 @@ All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
 | 1  | `5` | constant; charge-rate step? |
 | 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
-| 72 | wanders 4502–7203 every poll | free-running, correlates with nothing — keep it in `ignore_registers` |
+| 72 | falls as load rises; wanders at zero load | **Remaining runtime (minutes?)** — do *not* put this in `ignore_registers` |
+| 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — named sensor `usb_output_power` |
+| 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 exactly |
 | 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
 
 **Set `change_threshold: 0` while mapping.** The light mode enum steps by one
 (0→1→2→3), and a threshold of 1 suppresses every step — the mode register only
 became visible on the 3→0 transition back to off.
+
+**Capture under load, not just idle.** Registers 78, 90 and the meaning of 72
+are all invisible on a resting unit. Toggling an output tells you which bit
+flips; actually drawing power through it is what reveals the measurement
+registers.
+
+The status bitmask is additive: with USB and AC both on, reg 75 reads
+`0x0018` = `0x0008 | 0x0010`.
 
 The table is sparse: idle on battery with every output off, only 9 of the 100
 registers are non-zero. Most of the zeros are genuinely idle fields, not a
@@ -85,19 +95,43 @@ optimistic versus the app (observed: 198 min calculated vs. 168 min shown
 in-app, a ~15% gap). Both `battery_capacity_wh` and `battery_efficiency` are
 live-adjustable via `number:` entities, no reflash needed to recalibrate.
 
-**Two open questions worth re-testing**, because both would let you delete the
-efficiency fudge factor entirely:
+**Both of the original open questions are now answered**, by capturing with a
+real load attached rather than idle:
 
-1. **Registers 12 and 13 read *identical* values.** The original guess was that
-   reg 13 reports AC-side rather than DC-side power. A simpler explanation fits
-   the upstream maps: they may be *AC output power* and *total output power*
-   (two separate registers that read the same whenever AC is the only load).
-   Experiment 6 in the matrix below distinguishes these.
-2. **A real time-to-empty register may exist after all.** The upstream maps have
-   genuine time-to-empty and time-to-full registers. Reg 75 sitting still rules
-   out reg 75, not the value. Note also that ~19 registers were *invisible* to
-   those early captures: the old debug dump was hardcoded to 168 bytes while a
-   frame is 208, so registers ~81-99 never appeared in a log at all.
+**Registers 12 and 13 are not duplicates.** With a USB-C PD load and nothing
+else on, reg 13 tracked the draw (11 → 15 → 33 → 37 W) while reg 12 stayed at
+`0` throughout. With an AC load, reg 12 read the AC output power and reg 13 sat
+consistently 12–15 W above it:
+
+| reg 90 / reg 12 (AC out W) | reg 13 (battery W) | gap |
+|---|---|---|
+| 23 | 35 | 12 |
+| 36 | 51 | 15 |
+| 39 | 54 | 15 |
+
+That gap is the inverter plus standby overhead, so **reg 13 is the genuine
+DC-side battery draw** — not an AC-side mirror as originally suspected. The
+earlier "identical values" reading came from testing with an AC-only load,
+where the two naturally track.
+
+This matters for `battery_efficiency`: since reg 13 already includes conversion
+loss, multiplying by a derate factor **double-counts it**. If you keep the
+computed estimate, `efficiency` should be close to 1.0 and only account for
+usable-vs-nominal capacity.
+
+**Register 72 is very likely the device's own remaining-runtime estimate, in
+minutes.** It reads as noise only at zero load; under load it falls
+monotonically and settles:
+
+| battery draw | reg 72 | = |
+|---|---|---|
+| 0 W | 4502–7203, wandering | unstable, as a runtime estimate is at ~0 load |
+| 11 W | 4230 | 70.5 h |
+| 37 W | 934 | 15.6 h |
+| 54 W | 670 | 11.2 h |
+
+**Confirm it against the AFERIY app under a steady load.** If it matches, it
+replaces the computed `remaining_time` and the `efficiency` knob outright.
 
 ## Register discovery
 

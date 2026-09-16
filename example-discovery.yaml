@@ -96,9 +96,10 @@ p180:
   # and read off which register moved.
   log_changes: true
   # Registers that move on their own and would otherwise drown out the signal.
-  # 72 is free-running: it wanders on every single poll (4502..7203 observed)
-  # with no correlation to anything you do. Add more as you find them.
-  ignore_registers: [12, 13, 31, 72]
+  # NOT 72 - it looked like noise only because every capture was taken at zero
+  # load. Under load it falls monotonically (see the README), which is how a
+  # runtime estimate behaves. Leave it visible.
+  ignore_registers: [12, 13, 31]
   # 0, not 1: with 72 muted by name there is no jitter left to filter, and the
   # slow-moving registers on a resting unit move by exactly 1.
   change_threshold: 0
@@ -158,6 +159,10 @@ sensor:
     light_mode:
       name: "Light Mode"
       device_id: p180_device
+    # Tracks a USB-C PD load exactly (0 -> 11 -> 15 -> 33 -> 37 W).
+    usb_output_power:
+      name: "USB Output Power"
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -181,6 +186,18 @@ sensor:
       # Reads 0x0010 while AC output is on, and does not respond to the others.
       - register: 53
         name: "Reg 53 (AC-side, unidentified)"
+        device_id: p180_device
+      # Falls as load rises: 4230 min at 11W, 934 at 37W, 670 at 54W, and only
+      # wanders when the draw is ~0. Very likely REMAINING RUNTIME IN MINUTES.
+      # Compare it against the AFERIY app under a steady load - if it matches,
+      # it replaces the computed remaining_time and the efficiency fudge
+      # factor entirely.
+      - register: 72
+        name: "Reg 72 (remaining minutes?)"
+        device_id: p180_device
+      # AC output power. Mirrors reg 12 exactly, so one of the two is a copy.
+      - register: 90
+        name: "Reg 90 (AC output power)"
         device_id: p180_device
       - register: 66
         source: holding

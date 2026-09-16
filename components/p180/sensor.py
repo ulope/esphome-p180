@@ -34,6 +34,9 @@ REGISTER_SENSORS = {
     # Confirmed on a P180 Pro. NOTE: it steps by 1, so it is invisible unless
     # `change_threshold` is 0.
     "light_mode": (None, 0, None, 79, 1.0),
+    # USB output power. Tracked a USB-C PD load exactly on a P180 Pro, and is
+    # separate from output_power (reg 12), which stays 0 for a USB-only load.
+    "usb_output_power": ("W", 0, "power", 78, 1.0),
 }
 
 # Computed rather than read straight from a register.
