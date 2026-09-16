@@ -39,7 +39,7 @@ logger:
 external_components:
   - source:
       type: git
-      url: https://github.com/enelson493/esphome-p180
+      url: https://github.com/ulope/esphome-p180
       ref: main
     components: [p180]
     refresh: 0s
