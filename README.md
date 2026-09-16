@@ -50,14 +50,14 @@ finding. Only trust a row as far as its grade.
 
 | Register | Observed | Field | Evidence |
 |---|---|---|---|
-| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — read by `remaining_time` | **measured** — matches the figure on the station's own display |
+| 72 | ~5400 all-off, ~1550 AC idle, 15 at 2.2kW | **Remaining runtime, minutes** — read by `remaining_time` | **measured** — matches the figure on the station's own display |
 | 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — `usb_output_power` | **measured** |
 | 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 | **measured** |
 | 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6 V on a 230 V grid; sags to 208.9 V at ~1.8 kW | **measured** |
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
-| 13 | 137 W at AC idle, tracks load otherwise | **Battery discharge power (W)** — but carries a ~137 W offset whenever AC output is energised | **measured** both ways: exact under load and for USB steps; the idle offset is refuted as real draw by a 9-minute SoC hold |
+| 13 | 137 W at AC idle, `0` with all outputs off | **Output-attributed power (W)** — carries a ~137 W artifact whenever AC output is energised, and never includes station self-consumption | **measured** — exact under load and for USB steps; reads exactly 0 with outputs off; the idle figure is refuted by a 13-minute SoC hold |
 | 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
 | 1 | `5` | charge-rate step? | **guess** — constant in every capture |
@@ -234,26 +234,39 @@ reading, and switching it off removed exactly 8 W again. So it is a real power
 measurement carrying a constant offset that appears only when AC output is
 energised, not a broken register.
 
-**Settled by observation.** Across a nine-minute idle stretch with AC output on,
-SoC sat at 48% and never crossed a single 1% boundary. At the claimed 137 W the
-pack would have given up about 20 Wh in that time — roughly 2%, so two
+**Settled by observation.** SoC sat at 48% for **13 minutes** — with AC output
+energised for 12 of them — and never crossed a single 1% boundary. At the
+claimed 137 W the pack would have given up ~27 Wh, about 3%, so two or three
 crossings.
 
-Requiring *zero* crossings puts a hard ceiling on the real idle draw:
+Requiring *zero* crossings puts a hard ceiling on the real draw:
 
 | Wh per 1% | implied ceiling |
 |---|---|
-| 8.8 | < 59 W |
-| 9.8 | < 66 W |
+| 8.8 | < 44 W |
+| 9.8 | < 49 W |
 
-So **reg 13's 137 W at AC idle is wrong by at least a factor of two**, on the
-most generous assumptions. Reg 72's self-consistency figure of 24–26 W sits
-comfortably inside the ceiling — at 25 W the nine minutes cost 0.4%, invisible
-at 1% resolution.
+So **reg 13's 137 W at AC idle is wrong by roughly a factor of three**.
 
-What reg 13 is actually reporting when the inverter is energised but unloaded is
-unknown. It is not a broken register — under load it is consistent, and USB
-draw adds to it exactly — so this looks like a fixed offset rather than noise.
+**Reg 13 does not include station self-consumption at all.** Switching AC output
+off drops it to *exactly* 0, while the station is still plainly running its BMS,
+display and Bluetooth. So it reports output-attributed power only, and its
+AC-idle figure is an accounting artifact rather than a measurement of anything
+leaving the battery.
+
+What the station itself believes, from reg 72 (assuming a ~940 Wh pack at 48%):
+
+| state | reg 72 | implied draw |
+|---|---|---|
+| everything off | ~5400 min (90 h) | ~5 W |
+| AC output on, idle | ~1550 min (26 h) | ~18 W |
+
+The difference — about **12 W** — is the inverter's real idle cost. Not 137 W.
+Those two rows are *inferred*: they need a pack-size assumption, unlike the
+ceiling above.
+
+It is not a broken register: under load it is consistent, and USB draw adds to
+it exactly.
 
 > **Practical consequence:** `battery_discharge_power` over-reads by roughly
 > 137 W whenever AC output is on, whether or not anything is plugged into it.
@@ -300,6 +313,11 @@ this is the *station's* accounting, not a misread: its runtime estimate does not
 charge the ~150 W inverter standby against the battery. Treat `remaining_time`
 as optimistic whenever AC output is idling — the pack will not actually last
 16 h while burning 148 W.
+
+With every output switched off it reads ~5400 (90 h), which is why the earliest
+captures — all taken with the station idle — showed it wandering between 4502
+and 7203 and looked like noise. At a ~5 W draw a runtime estimate really is that
+large, and its jitter is amplified in proportion. It was never noise.
 
 When the load is removed it climbs back over roughly 40 seconds
 (`20 → 63 → 685 → 825 → 892 → 905`) and then **plateaus** at 860–1010,
