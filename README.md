@@ -57,6 +57,7 @@ finding. Only trust a row as far as its grade.
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
+| 13 | 137 W at AC idle, tracks load otherwise | **Battery discharge power (W)** — but carries a ~137 W offset whenever AC output is energised | **measured** both ways: exact under load and for USB steps; the idle offset is refuted as real draw by a 9-minute SoC hold |
 | 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
 | 1 | `5` | charge-rate step? | **guess** — constant in every capture |
@@ -233,16 +234,31 @@ reading, and switching it off removed exactly 8 W again. So it is a real power
 measurement carrying a constant offset that appears only when AC output is
 energised, not a broken register.
 
-**The test that would settle it outright:** leave the station idle with AC output
-on for half an hour and watch the `Battery` percentage.
+**Settled by observation.** Across a nine-minute idle stretch with AC output on,
+SoC sat at 48% and never crossed a single 1% boundary. At the claimed 137 W the
+pack would have given up about 20 Wh in that time — roughly 2%, so two
+crossings.
 
-| if the real idle draw is | SoC falls | over 30 min |
-|---|---|---|
-| 137 W | 1% every 4.3 min | ~7% |
-| 24 W | 1% every 24 min | ~1.2% |
+Requiring *zero* crossings puts a hard ceiling on the real idle draw:
 
-Those are trivially distinguishable. Captures so far only cover a few minutes of
-idle, which is not long enough to tell them apart.
+| Wh per 1% | implied ceiling |
+|---|---|
+| 8.8 | < 59 W |
+| 9.8 | < 66 W |
+
+So **reg 13's 137 W at AC idle is wrong by at least a factor of two**, on the
+most generous assumptions. Reg 72's self-consistency figure of 24–26 W sits
+comfortably inside the ceiling — at 25 W the nine minutes cost 0.4%, invisible
+at 1% resolution.
+
+What reg 13 is actually reporting when the inverter is energised but unloaded is
+unknown. It is not a broken register — under load it is consistent, and USB
+draw adds to it exactly — so this looks like a fixed offset rather than noise.
+
+> **Practical consequence:** `battery_discharge_power` over-reads by roughly
+> 137 W whenever AC output is on, whether or not anything is plugged into it.
+> Don't feed it into an energy dashboard without accounting for that. Under
+> load the error is proportionally small; at idle it is the entire reading.
 
 ### Pack capacity, roughly
 

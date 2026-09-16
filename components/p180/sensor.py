@@ -52,6 +52,11 @@ REGISTER_SENSORS = {
     "ac_out_voltage": ("V", 1, "voltage", 10, 0.1),
     "ac_out_frequency": ("Hz", 1, "frequency", 11, 0.1),
     "output_power": ("W", 0, "power", 12, 1.0),
+    # WARNING: carries a ~137W offset whenever AC output is energised, even with
+    # nothing plugged in. A nine-minute idle stretch showed no SoC movement at
+    # all, which caps the real idle draw below ~60W. Exact under load and for
+    # USB steps, so the offset is fixed rather than noise - but do not feed this
+    # into an energy dashboard without accounting for it.
     "battery_discharge_power": ("W", 0, "power", 13, 1.0),
     # Raw value IS the percent on this device - no scaling.
     "battery_percent": ("%", 0, "battery", 31, 1.0),
