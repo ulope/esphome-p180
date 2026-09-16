@@ -43,19 +43,28 @@ apply to this device.
 All four are named binary sensors: `light`, `dc_output`, `usb_output`,
 `ac_output`.
 
-| Register | Observed | Field |
-|---|---|---|
-| 79 | `0`, then one value per mode | **Light mode** enum — named sensor `light_mode` |
-| 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6V on a 230V grid — confirms the scaling originally derived on a 60Hz unit. Sags to 208.9 V at ~1.8kW, recovering instantly when the load drops |
-| 53 | `0x0010` while AC output on | AC-side, unidentified. Does not respond to USB/DC/light |
-| 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified. Does **not** respond to AC output |
-| 66 / 67 | increment together while an AC load runs | **Cumulative AC output energy, 10 Wh (0.01 kWh) per count.** Monotonic, holds when the load stops, never decreases. **Input** registers, unrelated to the Sydpower *holding* 66/67 |
-| 1  | `5` | constant; charge-rate step? |
-| 11 | `500` | AC output frequency, 50.0Hz nominal even with the output off |
-| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — confirmed against the app. Read by `remaining_time` |
-| 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — named sensor `usb_output_power` |
-| 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 exactly. Both stay `0` under a USB-only load, so both are AC-specific; no *total* output register has turned up |
-| 97–99 | `0x1901 0x0203 0x0405` | constant; version/serial info |
+Everything below is graded by how far the evidence actually goes. **Measured**
+means observed directly and cross-checked; **inferred** means it fits the data
+but rests on a model or an assumption; **guess** means it is a label, not a
+finding. Only trust a row as far as its grade.
+
+| Register | Observed | Field | Evidence |
+|---|---|---|---|
+| 72 | 950–1000 at idle, 15 at 2.2kW | **Remaining runtime, minutes** — read by `remaining_time` | **measured** — app showed 16 h against reg 72's 15.8–16.7 h |
+| 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — `usb_output_power` | **measured** |
+| 90 | `23`→`36`→`39` under an AC load | **AC output power (W)** — mirrors reg 12 | **measured** |
+| 10 | `2316` with AC output on | **AC output voltage** ×0.1 = 231.6 V on a 230 V grid; sags to 208.9 V at ~1.8 kW | **measured** |
+| 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
+| 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** (unit, reset behaviour); *inferred* that it is AC rather than total output |
+| 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
+| 53 | `0x0010` while AC output on | AC-side, unidentified | **guess** — only that it tracks AC output state |
+| 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
+| 1 | `5` | charge-rate step? | **guess** — constant in every capture |
+| 97–99 | `0x1901 0x0203 0x0405` | version/serial info? | **guess** — constant in every capture |
+
+Nothing here has been tested across a firmware update, a charge cycle, or a
+second unit. "Constant in every capture" means constant across a few hours on
+one P180 Pro.
 
 **Set `change_threshold: 0` while mapping.** The light mode enum steps by one
 (0→1→2→3), and a threshold of 1 suppresses every step — the mode register only
@@ -107,6 +116,11 @@ unit. With a 5 s poll interval you can only observe an interval as a multiple of
 It counts **AC output** energy, not battery energy: a battery-side basis
 (÷0.85) predicts 28.0 s and 23.2 s for the first two rows, consistently faster
 than observed.
+
+**It resets to 0 when the station restarts**, so it measures energy since
+power-on, not lifetime. Don't build a lifetime `total_increasing` energy sensor
+on it without handling the reset — and note that a restart between captures also
+means a jump *down* in the baseline is a power cycle, not a counter wrapping.
 
 **Not found: any fan indicator.** With the fans audibly cycling on and off
 about three minutes after a sustained 1.3kW load, the only registers that moved

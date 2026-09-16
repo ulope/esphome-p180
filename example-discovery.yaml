@@ -198,9 +198,10 @@ sensor:
       - register: 90
         name: "Reg 90 (AC output power)"
         device_id: p180_device
-      # Cumulative AC OUTPUT energy, 10Wh (0.01 kWh) per count - confirmed at
-      # three different load levels. Monotonic; holds when the load stops and
-      # never decreases. NOT the fan: it stopped counting three minutes before
+      # AC OUTPUT energy since power-on, 10Wh (0.01 kWh) per count - confirmed
+      # at three different load levels. Rises only under AC load and holds when
+      # it stops, but RESETS TO 0 when the station restarts, so it is not a
+      # lifetime meter. NOT the fan: it stopped counting three minutes before
       # the fans audibly ran. NOTE these are INPUT registers, unrelated to the
       # Sydpower HOLDING 66/67 (discharge floor / charge ceiling).
       - register: 66
