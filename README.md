@@ -59,7 +59,7 @@ finding. Only trust a row as far as its grade.
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
 | 2 | `1002` at the 1000 W switch setting, `501` at 500 W | **AC input / charging power (W)** — `ac_input_power` | **measured** |
 | 71 | `34` at 1000 W, `67` at 500 W | **Time to full, minutes** — `time_to_full`. Mirror of reg 72 | **measured** — both rates match to a few minutes assuming ~85% charge efficiency |
-| 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. Positive = output, negative = input | **measured** — equals −reg 2 exactly on every charging sample |
+| 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. On battery it is AC output; grid-connected it is −AC input, *even with an output load* | **measured** — equals −reg 2 on every charging sample, including while the AC output supplied 46 W |
 | 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step` | **measured**, but only two switch positions sampled — do not extrapolate a formula |
 | 37 | `0x4000` idle, `0x8000`/`0x8040` charging | charge status bitmask? | **guess** — only that it changes with charging |
 | 53 | `0x10` AC out, `0x68` AC in, `0x78` both | additive status bitmask | **inferred** — the three values add up, but no bit is individually confirmed |
@@ -89,15 +89,26 @@ Plugging in AC input brings a second set of registers to life. Reg 8 and reg 9
 jump to the real mains figures (233.0 V, 50.00 Hz), which is what drives the
 `grid_power` binary sensor.
 
-**Register 90 is signed.** While discharging it reads AC output power; while
-charging it reads the *negative* of the AC input power, matching −reg 2 exactly
-on every sample. Read as unsigned it publishes ~65000 the moment the charger is
-connected, so `ac_power` sets `signed: true`. The same option is available on
-`raw_registers:` entries.
+**Register 90 is signed**, and reading it unsigned publishes ~65000 the moment
+the charger is connected, so `ac_power` sets `signed: true`. The same option is
+available on `raw_registers:` entries.
 
-Reg 12 is **not** a mirror of reg 90 after all — that only holds while
-discharging. With the charger connected, reg 12 stays at `0` while reg 90 goes
-to −1002.
+It is **not a net figure**, though. Switching AC output on *while the charger is
+still connected* and then plugging in a load shows the two sides tracked
+separately:
+
+| | reg 12 (AC out) | reg 2 (AC in) | reg 90 |
+|---|---|---|---|
+| no load | 0 W | 502 | −502 |
+| load ramping | 25 W | 502 | −502 |
+| load settled | 46 W | 501 | −501 |
+
+Reg 90 stays pinned to the input while the output climbs. So the rule is:
+
+- running on battery → reg 90 = **+** AC output power (and equals reg 12)
+- grid connected → reg 90 = **−** AC input power, *regardless* of any AC output load
+
+Reg 12 is therefore not a mirror of reg 90 — that only holds while discharging.
 
 `remaining_time` (reg 72) reads **0** while charging, which is correct — time to
 empty is meaningless then. Use `time_to_full` (reg 71) instead.
@@ -280,6 +291,12 @@ display and Bluetooth. So it reports output-attributed power only.
 Yes. With AC output off and only a USB-C PD device attached, reg 13 equalled
 reg 78 exactly at 11, 15, 33 and 37 W, and adding an 8 W USB draw on top of the
 AC-idle reading moved it by exactly +8. Same unit as regs 78 and 90.
+
+The offset is also **absent whenever the charger is connected**: with AC input
+plugged in and AC output energised and supplying 46 W, reg 13 read `0`,
+correctly reflecting that the load was coming from mains rather than the
+battery. Every instance of the offset so far has been while running on
+battery.
 
 The error is **additive, not an RMS artifact**. At 1757 W of AC output, an
 additive model predicts 2204 against the observed 2222 (−18); combining the two
