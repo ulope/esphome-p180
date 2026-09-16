@@ -222,16 +222,30 @@ void P180Component::on_notify_(const uint8_t *data, uint16_t len) {
   }
   this->rx_buf_.insert(this->rx_buf_.end(), data, data + len);
 
-  // The echoed 6-byte header carries the register count, so the total length
-  // isn't known until it has arrived.
-  if (this->rx_buf_.size() < P180_HEADER_LEN) {
+  // Identify the frame type as soon as the function code lands, before waiting
+  // for a full header. A Modbus exception reply (function | 0x80) is only 5
+  // bytes, so it never reaches the 6-byte header length - if it were left in
+  // the buffer it would corrupt the next frame appended after it. The station
+  // can legitimately send one if it rejects the 0x03 settings read.
+  if (this->rx_buf_.size() < 2) {
     return;
   }
 
   const uint8_t func = this->rx_buf_[1];
   if (func != P180_FUNC_READ_INPUT && func != P180_FUNC_READ_HOLDING) {
-    ESP_LOGV(TAG, "Ignoring frame with unsupported function 0x%02X", static_cast<unsigned>(func));
+    if (func & 0x80) {
+      ESP_LOGD(TAG, "Station rejected function 0x%02X with a Modbus exception",
+               static_cast<unsigned>(func & 0x7F));
+    } else {
+      ESP_LOGV(TAG, "Ignoring frame with unsupported function 0x%02X", static_cast<unsigned>(func));
+    }
     this->rx_buf_.clear();
+    return;
+  }
+
+  // The echoed 6-byte header carries the register count, so the total length
+  // isn't known until it has arrived.
+  if (this->rx_buf_.size() < P180_HEADER_LEN) {
     return;
   }
 
