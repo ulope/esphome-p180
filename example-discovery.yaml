@@ -5,10 +5,19 @@
 # section of the README for the experiment matrix.
 #
 # This config is read-only. The component never issues Modbus writes.
+#
+# The ESP32 is its own device here; the battery is registered as a sub-device so
+# its entities group under "AFERIY P180" in Home Assistant rather than taking
+# over the whole node. Requires ESPHome 2025.7.0 or newer.
 
 esphome:
-  name: p180discovery
-  friendly_name: P180 Discovery
+  # The ESP32 itself - this is the hostname and OTA identity, not the battery.
+  name: esp32-ble-gateway
+  friendly_name: ESP32 BLE Gateway
+  min_version: 2025.7.0
+  devices:
+    - id: p180_device
+      name: "AFERIY P180"
 
 esp32:
   board: esp32dev
@@ -64,18 +73,22 @@ button:
     p180_id: p180_main
     action: reset_baseline
     name: "Reset Baseline"
+    device_id: p180_device
   - platform: p180
     p180_id: p180_main
     action: dump_input
     name: "Dump Status Registers"
+    device_id: p180_device
   - platform: p180
     p180_id: p180_main
     action: dump_holding
     name: "Dump Settings Registers"
+    device_id: p180_device
   - platform: p180
     p180_id: p180_main
     action: probe_extended
     name: "Probe Extended Registers"
+    device_id: p180_device
 
 sensor:
   # Known-good sensors, so you can sanity check against the AFERIY app.
@@ -83,14 +96,19 @@ sensor:
     p180_id: p180_main
     ac_in_voltage:
       name: "AC Input Voltage"
+      device_id: p180_device
     ac_in_frequency:
       name: "AC Input Frequency"
+      device_id: p180_device
     battery_percent:
       name: "Battery"
+      device_id: p180_device
     output_power:
       name: "Output Power"
+      device_id: p180_device
     battery_discharge_power:
       name: "Battery Discharge Power"
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -101,23 +119,29 @@ sensor:
     raw_registers:
       - register: 41
         name: "Reg 41 (status bitmask candidate)"
+        device_id: p180_device
       - register: 39
         name: "Reg 39 (total output power candidate)"
+        device_id: p180_device
       - register: 56
         name: "Reg 56 (SoC candidate)"
         scale: 0.1
+        device_id: p180_device
       - register: 66
         source: holding
         name: "Holding 66 (discharge floor candidate)"
         scale: 0.1
+        device_id: p180_device
 
 binary_sensor:
   - platform: p180
     p180_id: p180_main
     connected:
       name: "P180 Connected"
+      device_id: p180_device
     grid_power:
       name: "Grid Power"
+      device_id: p180_device
 
     # Once the status bitmask register is confirmed, the output flags are pure
     # YAML. Masks below are the Sydpower/P280 layout - hypotheses, not facts.
@@ -125,12 +149,16 @@ binary_sensor:
       - register: 41
         bitmask: 0x0800
         name: "AC Output Active (unconfirmed)"
+        device_id: p180_device
       - register: 41
         bitmask: 0x0400
         name: "DC Output Active (unconfirmed)"
+        device_id: p180_device
       - register: 41
         bitmask: 0x0200
         name: "USB Output Active (unconfirmed)"
+        device_id: p180_device
       - register: 41
         bitmask: 0x1000
         name: "Light On (unconfirmed)"
+        device_id: p180_device
