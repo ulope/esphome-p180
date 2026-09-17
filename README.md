@@ -38,6 +38,7 @@ apply to this device.
 | `0x0004` | DC output | 2 on/off cycles |
 | `0x0008` | USB output | 5 on/off cycles |
 | `0x0010` | AC output | 3 on/off cycles |
+| `0x0040` | Silent AC charging enabled? | **inferred** — appeared (`0x0010` → `0x0050`) in the same poll as enabling it in the app, with nothing else in the status table moving. **One transition, on-direction only**; toggle it off and check this clears before trusting it |
 | `0x0001` | *unidentified* | never seen set |
 
 All four are named binary sensors: `light`, `dc_output`, `usb_output`,
@@ -61,9 +62,11 @@ finding. Only trust a row as far as its grade.
 | 71 | `34` at 1000 W, `67` at 500 W | **Time to full, minutes** — `time_to_full`. Mirror of reg 72 | **measured** — both rates match to a few minutes assuming ~85% charge efficiency |
 | 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. On battery it is AC output; grid-connected it is −AC input, *even with an output load* | **measured** — equals −reg 2 on every charging sample, including while the AC output supplied 46 W |
 | 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step`. Tracks the rear switch; the switch writes nothing into the settings table | **measured** in both directions — a live flip moved it 3 → 5 with reg 2 following. Only two switch positions sampled, so do not extrapolate a formula |
-| h26 / h27 | `100`→`160`, `850`→`880` | **Discharge floor / charge ceiling, ×0.1 %** — `discharge_limit`, `ac_charge_limit`. In the **settings** (`0x03`) table, not the status table | **measured** — each moved when the matching value was changed in the app |
+| h24 / h28 / h29 / h30 | 480→960, 5→480, 3→10, 480→1440 | **AC / whole-device / USB / DC standby timers, minutes** — `ac_standby_time`, `device_shutdown_time`, `usb_standby_time`, `dc_standby_time`. **Settings** (`0x03`) table | **measured** — each matched against its own row in the app's Standby-Zeit screen |
+| h25 | `300`→`600` | **Screen-off timeout, seconds** (*not* minutes like the timers above) — `screen_timeout`. Settings table | **measured** — app screen timeout 5 → 10 min |
+| h26 / h27 | `100`→`160`, `850`→`880` | **Discharge floor / charge ceiling, ×0.1 %** — `discharge_limit`, `ac_charge_limit`. Settings table | **measured** — each moved when the matching value was changed in the app |
 | 37 | `0x4000` idle, `0x8000`/`0x8040` charging | charge status bitmask? | **guess** — only that it changes with charging |
-| 53 | `0x10` AC out, `0x68` AC in, `0x78` both | additive status bitmask | **inferred** — the three values add up, but no bit is individually confirmed |
+| 53 | `0x10` AC out, `0x68` AC in, `0x78` both — but `0x38` with both, once | AC-side status bitmask | **guess** — the additive story is contradicted: with AC input connected *and* AC output on it read `0x38`, not the predicted `0x78`. That sample had charging stopped at the ceiling, so the missing `0x40` may be a charging-active bit, but that is one observation |
 | 13 | `0` with all outputs off; an offset of 12–155 W with AC energised | **Output-attributed power, watts** — never includes station self-consumption; the AC-idle offset varies *between sessions* and is sometimes plain wrong | **measured** — unit, additivity, and 0-with-outputs-off; the high idle figures are refuted by a 13-minute SoC hold. Mechanism **unknown** |
 | 54 | `0x0800` light, `0x0837` USB, `0x0980` DC | DC-side, unidentified | **guess** — only that it tracks DC-side output state |
 | 97–99 | `0x1901 0x0203 0x0405` | version/serial info? | **guess** — constant in every capture |
@@ -619,7 +622,7 @@ Run with `log_changes: true` and `ignore_registers: [12, 13, 31]`, pressing
 | 11 | Let SoC move ≥1% while discharging | SoC scaling, time-to-empty / time-to-full |
 | 12 | Long idle / sustained high load | temperature registers |
 | 13 | Press **Probe Extended Registers** | whether >100 registers exist |
-| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how holding 26/27 were mapped |
+| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how all eight mapped settings registers were found |
 | 15 | Flip the rear 1000 W / 500 W input switch | status reg 1 (3 ↔ 5) and reg 2. *Not* the settings table — it does not move |
 
 ### Upstream maps — hypotheses, not answers
@@ -646,10 +649,15 @@ USB/DC/AC output toggles · 27 light mode · 56 key sound · 57 AC silent
 charging · 59-61 standby timers · 62 screen rest (seconds) ·
 66 discharge floor (÷10 %) · 67 AC charge ceiling (÷10 %) · 68 sleep minutes.
 
+The settings half of that list is now a worked example of how to use it. Every
+*field* in it that has been looked for on the P180 was found — standby timers,
+screen rest in seconds, the floor/ceiling pair in tenths of a percent — and not
+one was at the upstream offset. See [Settings table](#settings-table-0x03).
+
 ### Settings table (`0x03`)
 
-The settings table answers, and two of its registers are now mapped. 80
-registers, 15 of them non-zero:
+The settings table answers, and 8 of its 15 non-zero registers are mapped. 80
+registers total, at rest:
 
 ```
 holding regs 000-015: 0000 0000 0000 0000 0320 0000 0000 0001 0000 0000 0000 0000 0000 0000 0000 0000
@@ -659,30 +667,38 @@ holding regs 048-063: 0010 000C 000D 0000 0000 0000 0000 0000 0000 0000 0000 000
 holding regs 064-079: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
 ```
 
-| Reg | Dec | Field | Evidence |
+Everything mapped here was measured the same way: change the value in the
+AFERIY app, read the `holding reg NN` diff line. Every row below has two data
+points and a matching app label.
+
+| Reg | Observed | Field | App label (German UI) |
 |---|---|---|---|
-| 4 | 800 | — | unexplained |
-| 7 | 1 | a flag | **guess** |
-| 21 | 15 | — | unexplained. Adjacent to the floor/ceiling pair but not part of it |
-| 23 | 1 | a flag | **guess** |
-| 24 | 480 | a timeout (8 h, or 8 min if seconds) | **guess** — round, and 30 repeats it |
-| 25 | 300 | a timeout (5 h / 5 min) | **guess** |
-| **26** | **100 → 160** | **Discharge floor, tenths of a percent** — `discharge_limit` | **measured**: the app's discharge limit 10 % → 16 % moved it 100 → 160 |
-| **27** | **850 → 880** | **Charge ceiling, tenths of a percent** — `ac_charge_limit` | **measured**: the app's "AC Ladelimit im ESP modus" 85 % → 88 % moved it 850 → 880 |
-| 28 | 5 | — | unexplained; see the refutation below |
-| 29 | 3 | — | unexplained; see the refutation below |
-| 30 | 480 | a timeout, same units as 24 | **guess** |
-| 47-50 | 11, 16, 12, 13 | firmware/version fields | **guess** — four small numbers in a row, at the offsets upstream uses for versions (in its *status* table) |
+| **23** | 1 → 5 | **Silent-AC-charging current, amps** — `silent_charge_current` | 1 A → 5 A |
+| **24** | 480 → 960 | **AC idle standby, minutes** — `ac_standby_time` | AC-Leerlaufstandby-Zeit, 8 h → 16 h |
+| **25** | 300 → 600 | **Screen off, seconds** — `screen_timeout` | 5 min → 10 min |
+| **26** | 100 → 160 | **Discharge floor, ×0.1 %** — `discharge_limit` | 10 % → 16 % |
+| **27** | 850 → 880 | **Charge ceiling, ×0.1 %** — `ac_charge_limit` | AC Ladelimit im ESP modus, 85 % → 88 % |
+| **28** | 5 → 480 | **Whole-device shutdown, minutes** — `device_shutdown_time` | Gesamtgerät-Abschaltzeit, 5 min → 480 min |
+| **29** | 3 → 10 | **USB idle standby, minutes** — `usb_standby_time` | USB-Leerlaufstandby-Zeit, 3 min → 10 min |
+| **30** | 480 → 1440 | **DC idle standby, minutes** — `dc_standby_time` | DC-Leerlaufstandby-Zeit, 8 h → 24 h |
 
-Everything else reads `0000`.
+Still unidentified: 4 (`800`), 7 (`1`), 21 (`15`), and 47-50
+(`11, 16, 12, 13` — four small numbers in a row, at the offsets upstream uses
+for firmware versions in its *status* table, which is a **guess**). Everything
+else reads `0000`.
 
-**The floor/ceiling pair transfers; its offsets do not.** Upstream P280/P310
-have exactly this pair — discharge floor and AC charge ceiling, both in tenths
-of a percent — at holding 66/67. On the P180 those read `0000` and the pair
-lives at **26/27**, with the same scaling. Same fields, relocated. The rest of
-the upstream settings map does not transfer either: it puts the USB/DC/AC
-output toggles at holding 24/25/26 and light mode at 27, and here those read
-480, 300, 100 and 850 — no encoding of an on/off toggle produces 480.
+**The units are not uniform.** Screen-off is in seconds; all four standby
+timers are in minutes. The two are adjacent in the table — 24 and 25 sit next
+to each other — so do not infer one from the other. At rest, 24 and 30 both
+read `480`, which is 8 *hours*, not 8 minutes.
+
+**The upstream field set largely transfers; none of its offsets do.** P280/P310
+have the discharge floor and AC charge ceiling in tenths of a percent at
+holding 66/67, screen rest in seconds at 62, and standby timers at 59-61. Every
+one of those fields exists on the P180 with the same units — and all of them
+are somewhere else. Holding 59-62 and 66/67 read `0000` here. Where upstream's
+map is useful is in supplying *field names and scalings* to test against; as a
+set of offsets it is worthless on this device.
 
 **The rear 1000 W / 500 W switch writes nothing into the settings table.**
 Flipping it 500 → 1000 W moved status reg 1 from 3 to 5 in the same poll, with
@@ -690,17 +706,32 @@ reg 2 following 501 → 760 W five seconds later — but dumps taken either side
 the flip are byte-identical across all 80 registers. It is a hardware switch,
 and the settings table only carries what the app can set.
 
-That also refutes an earlier guess here: holding 28 and 29 read 5 and 3, which
-are exactly the two values status reg 1 takes at the two switch positions, and
-that looked like the charge-rate setting. It was a coincidence — both held
-still through the flip. Two registers matching two observed values is not
-evidence; only a register that *moves with* the thing is.
+**How the two wrong guesses here went wrong.** Both are worth recording,
+because they are the same mistake in opposite directions:
 
-**How to map more of it.** No button-pressing loop is needed: with
+- *Holding 28 is the charge-rate setting* — graded **inferred**, on the
+  strength of 28 and 29 reading 5 and 3, exactly the two values status reg 1
+  takes at the two switch positions. They are the device-shutdown timer (5 min)
+  and the USB standby timer (3 min). Two registers matching two observed values
+  is a coincidence, and "inferred" was too strong for it.
+- *24 and 30 are 8 minutes* — extrapolated from 25 being seconds, the moment 25
+  was confirmed. They are minutes, so 480 is 8 hours. One register's units say
+  nothing about its neighbour's.
+
+**How to map the rest.** No button-pressing loop is needed: with
 `settings_interval` at its 60 s default and `log_changes: true`, the component
 diffs the settings table on its own, so changing a setting in the app produces
-a `holding reg NN: ... -> ...` line within a minute. That is how 26 and 27 were
+a `holding reg NN: ... -> ...` line within a minute. That is how all seven were
 pinned down, and it is the only method that has worked on this table.
+
+**The charge ceiling was confirmed a second way, by behaviour.** In a later
+capture the battery sat at 90 % (status reg 31 = `0x5A`) with holding 27 at
+`900`, mains present at 232.7 V, and `charging_power` reading exactly `0`. The
+station had stopped charging at the value in that register.
+
+**Holding 23 is the stored current, not an on/off state.** It already read `1`
+in the very first settings dump, before silent charging was ever touched. The
+enable flag is most likely status reg 75 bit `0x0040` — see the bitmask table.
 
 ## Why there are no writes
 
@@ -919,8 +950,9 @@ characteristic. Harmless — it's discarded — but worth a look at `VERBOSE` le
   battery discharge power, remaining time, connection state
 - ✅ Derived grid-power (outage) binary sensor — confirmed by direct test
 - ✅ Any register or status bit exposed from YAML, no C++ change
-- ✅ Settings table (`0x03`) read alongside the status table, with
-  `discharge_limit` and `ac_charge_limit` mapped out of it; see
+- ✅ Settings table (`0x03`) read alongside the status table, with eight
+  registers mapped out of it — the four standby timers, the screen timeout, the
+  charge/discharge limits and the silent-charging current; see
   [Settings table](#settings-table-0x03)
 - ✅ Changed-register diff logging, chunked full dumps, extended-range probe
 - ✅ Offline diff tooling (`tools/regdiff.py`)

@@ -101,6 +101,29 @@ REGISTER_SENSORS = {
     # wall draw. Read unsigned it publishes ~65000.
     "ac_power": ("W", 0, "power", 90, 1.0, True),
     # --- settings table (0x03) ---
+    # --- the timeout family ---
+    # THE UNITS ARE NOT UNIFORM. Screen-off is seconds; the four standby timers
+    # are minutes. Each was measured by changing it in the app's "Standby-Zeit"
+    # screen and reading the holding diff:
+    #
+    #   25  300 ->  600   screen off          5 min -> 10 min   => SECONDS
+    #   24  480 ->  960   AC idle standby     8 h   -> 16 h     => minutes
+    #   30  480 -> 1440   DC idle standby     8 h   -> 24 h     => minutes
+    #   29    3 ->   10   USB idle standby    3 min -> 10 min   => minutes
+    #   28    5 ->  480   whole-device off    5 min -> 480 min  => minutes
+    #
+    # 24 and 30 both read 480 at rest, which is 8 HOURS, not 8 minutes - do not
+    # carry 25's seconds across to them.
+    "screen_timeout": ("s", 0, "duration", 25, 1.0, False, "holding"),
+    "ac_standby_time": ("min", 0, "duration", 24, 1.0, False, "holding"),
+    "dc_standby_time": ("min", 0, "duration", 30, 1.0, False, "holding"),
+    "usb_standby_time": ("min", 0, "duration", 29, 1.0, False, "holding"),
+    "device_shutdown_time": ("min", 0, "duration", 28, 1.0, False, "holding"),
+    # Silent-AC-charging current, amps. Measured: 1 A -> 5 A in the app moved
+    # holding 23 from 1 to 5. NOTE it already read 1 before the feature was ever
+    # touched, so it is the stored current, not an on/off state - the enable
+    # flag is most likely status reg 75 bit 0x0040 (see the README, inferred).
+    "silent_charge_current": ("A", 0, "current", 23, 1.0, False, "holding"),
     # Discharge floor, tenths of a percent. Measured: changing the app's
     # discharge limit from 10% to 16% moved holding 26 from 100 to 160.
     "discharge_limit": ("%", 0, "battery", 26, 0.1, False, "holding"),
