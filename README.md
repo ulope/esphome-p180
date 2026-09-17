@@ -38,11 +38,12 @@ apply to this device.
 | `0x0004` | DC output | 2 on/off cycles |
 | `0x0008` | USB output | 5 on/off cycles |
 | `0x0010` | AC output | 3 on/off cycles |
-| `0x0040` | Silent AC charging enabled? | **inferred** — appeared (`0x0010` → `0x0050`) in the same poll as enabling it in the app, with nothing else in the status table moving. **One transition, on-direction only**; toggle it off and check this clears before trusting it |
+| `0x0040` | Silent AC charging (a mode, not an output) | **measured** — `0x0010` → `0x0050` on enable and back to `0x0010` on disable, with nothing else in the status table moving either time |
+| `0x0020` | DC input type is DC (vs PV)? | **inferred** — set when the type was switched PV → DC, with the settings table byte-identical either side. **One transition, one direction**; switch back to PV to confirm the polarity |
 | `0x0001` | *unidentified* | never seen set |
 
-All four are named binary sensors: `light`, `dc_output`, `usb_output`,
-`ac_output`.
+The outputs and the silent-charging flag are named binary sensors: `light`,
+`dc_output`, `usb_output`, `ac_output`, `silent_charging`.
 
 Everything below is graded by how far the evidence actually goes. **Measured**
 means observed directly and cross-checked; **inferred** means it fits the data
@@ -652,7 +653,8 @@ charging · 59-61 standby timers · 62 screen rest (seconds) ·
 The settings half of that list is now a worked example of how to use it. Every
 *field* in it that has been looked for on the P180 was found — standby timers,
 screen rest in seconds, the floor/ceiling pair in tenths of a percent — and not
-one was at the upstream offset. See [Settings table](#settings-table-0x03).
+one was at the upstream offset. One is not even in the same table: DC input
+type is upstream's holding 15, and on the P180 it is a bit of status reg 75. See [Settings table](#settings-table-0x03).
 
 ### Settings table (`0x03`)
 
@@ -729,9 +731,16 @@ capture the battery sat at 90 % (status reg 31 = `0x5A`) with holding 27 at
 `900`, mains present at 232.7 V, and `charging_power` reading exactly `0`. The
 station had stopped charging at the value in that register.
 
-**Holding 23 is the stored current, not an on/off state.** It already read `1`
-in the very first settings dump, before silent charging was ever touched. The
-enable flag is most likely status reg 75 bit `0x0040` — see the bitmask table.
+**Two "settings" are not in the settings table at all.** Silent AC charging
+and the DC input type both move status reg 75 and leave all 80 holding
+registers byte-identical. The upstream map puts DC input type at holding 15;
+on the P180 it is a status bit. So when a setting does not show up in a holding
+diff, check reg 75 before concluding the table does not carry it.
+
+**Holding 23 is the stored current, not an on/off state.** It held at `5`
+straight through disabling silent charging, which is the same conclusion its
+resting value of `1` pointed at before the feature was ever touched. The enable
+flag is status reg 75 bit `0x0040` — see the bitmask table.
 
 ## Why there are no writes
 

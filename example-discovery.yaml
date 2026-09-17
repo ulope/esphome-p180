@@ -309,6 +309,12 @@ binary_sensor:
     light:
       name: "Light"
       device_id: p180_device
+    # Not an output - the silent-AC-charging mode flag, reg 75 bit 0x0040.
+    # Confirmed in both directions. The current it uses is silent_charge_current
+    # (holding 23), which is a separate setting and does not track this.
+    silent_charging:
+      name: "Silent AC Charging"
+      device_id: p180_device
 
     # All four output flags are confirmed and are now named sensors above -
     # no masks to copy. Reg 75 is the status register on the P180, NOT reg 41:
@@ -322,12 +328,13 @@ binary_sensor:
         bitmask: 0x0001
         name: "Reg 75 bit 0 (unidentified)"
         device_id: p180_device
-      # Appeared (0x0010 -> 0x0050) in the same poll as enabling "Silent AC
-      # charging" in the app, and nothing else in the status table moved. Only
-      # ONE transition has been seen and only in the on direction, so this is
-      # inferred, not measured - toggle the setting off and check this clears
-      # before trusting it. Promote it to a named binary sensor once it does.
+      # Set when the DC input type was switched from PV to DC in the app, with
+      # the settings table byte-identical either side of the change - so the
+      # input type is a STATUS bit here, not a setting, unlike the P280/P310
+      # map which puts it at holding 15. Only one transition has been seen and
+      # only in the PV -> DC direction: switch it back to PV and check this
+      # clears before trusting the polarity.
       - register: 75
-        bitmask: 0x0040
-        name: "Silent AC Charging (unconfirmed)"
+        bitmask: 0x0020
+        name: "DC Input Type is DC (unconfirmed)"
         device_id: p180_device

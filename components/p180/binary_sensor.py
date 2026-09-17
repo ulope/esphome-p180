@@ -57,6 +57,12 @@ BIT_SENSORS = {
     "dc_output": ("power", 75, 0x0004),
     "usb_output": ("power", 75, 0x0008),
     "ac_output": ("power", 75, 0x0010),
+    # Not an output: the silent-AC-charging mode flag. Confirmed in BOTH
+    # directions - enabling it in the app took reg 75 from 0x0010 to 0x0050 and
+    # disabling it took 0x0050 back to 0x0010, with nothing else in the status
+    # table moving either time. The current that mode uses is a separate
+    # setting, holding 23, which held at 5 straight through the off-toggle.
+    "silent_charging": (None, 75, 0x0040),
 }
 
 # Expose any single bit of any register. Once the status bitmask register is
@@ -78,7 +84,11 @@ CONFIG_SCHEMA = cv.Schema(
             for key, (dclass, _setter) in BINARY_SENSORS.items()
         },
         **{
-            cv.Optional(key): binary_sensor.binary_sensor_schema(device_class=dclass)
+            # A mode flag has no meaningful device class, and passing None is
+            # not the same as leaving the argument out.
+            cv.Optional(key): binary_sensor.binary_sensor_schema(
+                **({"device_class": dclass} if dclass is not None else {})
+            )
             for key, (dclass, _register, _mask) in BIT_SENSORS.items()
         },
     }
