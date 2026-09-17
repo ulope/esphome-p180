@@ -312,7 +312,15 @@ void P180Component::handle_frame_(const uint8_t *frame, uint16_t len, uint8_t fu
   this->publish_(source);
 }
 
-bool P180Component::is_ignored_(uint16_t reg) const {
+bool P180Component::is_ignored_(RegSource source, uint16_t reg) const {
+  // Status-table only. The list exists to mute registers that move on their own
+  // (power, SoC), which is a property of the 0x04 table; the settings table is
+  // polled a minute apart and barely moves. Applying the same offsets to both
+  // would silently drop a real settings change that happened to land on 12, 13
+  // or 31 - exactly the registers the documented example mutes.
+  if (source != REG_SOURCE_INPUT) {
+    return false;
+  }
   return std::find(this->ignored_registers_.begin(), this->ignored_registers_.end(), reg) !=
          this->ignored_registers_.end();
 }
@@ -324,7 +332,7 @@ void P180Component::store_and_diff_(RegSource source, const uint8_t *frame, uint
   for (uint16_t i = 0; i < count; i++) {
     const uint16_t value =
         (static_cast<uint16_t>(frame[P180_HEADER_LEN + i * 2]) << 8) | frame[P180_HEADER_LEN + i * 2 + 1];
-    if (diff && value != regs[i] && !this->is_ignored_(i)) {
+    if (diff && value != regs[i] && !this->is_ignored_(source, i)) {
       const uint16_t delta = value > regs[i] ? value - regs[i] : regs[i] - value;
       if (delta > this->change_threshold_) {
         ESP_LOGD(TAG, "%s reg %u: 0x%04X -> 0x%04X (%u -> %u)", source_name_(source), static_cast<unsigned>(i),
@@ -377,7 +385,9 @@ void P180Component::publish_(RegSource source) {
                static_cast<unsigned>(entry.reg), static_cast<unsigned>(count));
       continue;
     }
-    entry.sensor->publish_state(regs[entry.reg] * entry.scale);
+    const float raw =
+        entry.is_signed ? static_cast<float>(static_cast<int16_t>(regs[entry.reg])) : static_cast<float>(regs[entry.reg]);
+    entry.sensor->publish_state(raw * entry.scale);
   }
 
   for (auto &entry : this->register_bit_sensors_) {
@@ -398,25 +408,6 @@ void P180Component::publish_(RegSource source) {
 
   if (this->grid_power_binary_sensor_ != nullptr && P180_REG_AC_IN_FREQUENCY < count) {
     this->grid_power_binary_sensor_->publish_state(regs[P180_REG_AC_IN_FREQUENCY] > P180_GRID_PRESENT_THRESHOLD);
-  }
-
-  // "Remaining time" is computed rather than read. Register 75 looked plausible
-  // but stayed fixed across captures while the app's own estimate moved. Note
-  // that ~19 registers were invisible to those early captures because the old
-  // hex dump was truncated below the frame size, so a genuine time-to-empty
-  // register may still turn up - see the README's discovery notes.
-  if (this->remaining_time_sensor_ != nullptr && P180_REG_BATTERY_PERCENT < count) {
-    const float discharge_w = regs[P180_REG_BATTERY_DISCHARGE_POWER];
-    if (discharge_w > 0.0f) {
-      const float battery_pct = regs[P180_REG_BATTERY_PERCENT];
-      const float minutes =
-          (battery_pct / 100.0f * this->battery_capacity_wh_ * this->battery_efficiency_) / discharge_w * 60.0f;
-      this->remaining_time_sensor_->publish_state(minutes);
-    } else {
-      // Not discharging (on AC passthrough, or idle) - "remaining time on
-      // battery" isn't a meaningful number right now.
-      this->remaining_time_sensor_->publish_state(NAN);
-    }
   }
 }
 
@@ -444,9 +435,12 @@ void P180Component::probe_extended_registers() {
     return;
   }
   ESP_LOGI(TAG,
-           "Probing %u input registers (the station volunteers %u). No reply, or a CRC "
-           "failure, means the extended range isn't supported - polling continues normally.",
-           static_cast<unsigned>(P180_MAX_REGS), static_cast<unsigned>(P180_INPUT_REG_COUNT));
+           "Probing %u input registers (the station volunteers %u). This message is printed "
+           "before the request, not a verdict - read the dump that follows. No dump, or a CRC "
+           "warning, means the range is not answered. On a P180 Pro it IS answered, but the "
+           "data above register %u is comms-buffer memory, not telemetry (see the README).",
+           static_cast<unsigned>(P180_MAX_REGS), static_cast<unsigned>(P180_INPUT_REG_COUNT),
+           static_cast<unsigned>(P180_INPUT_REG_COUNT - 1));
   this->dump_pending_[REG_SOURCE_INPUT] = true;
   this->send_read_request_(P180_FUNC_READ_INPUT, 0, P180_MAX_REGS);
 }

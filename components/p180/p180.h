@@ -62,8 +62,6 @@ static const uint32_t P180_MIN_REQUEST_GAP_MS = 250;
 // Registers backing derived (non-raw) entities. Everything else is described in
 // sensor.py / binary_sensor.py or configured from YAML.
 static const uint16_t P180_REG_AC_IN_FREQUENCY = 9;
-static const uint16_t P180_REG_BATTERY_DISCHARGE_POWER = 13;
-static const uint16_t P180_REG_BATTERY_PERCENT = 31;
 // AC input frequency reads ~6000 (60.00Hz) on grid power and exactly 0 on
 // battery. Threshold well below nominal so a noisy sample can't flap the sensor.
 static const uint16_t P180_GRID_PRESENT_THRESHOLD = 1000;
@@ -88,6 +86,10 @@ struct RegisterSensor {
   uint16_t reg;
   float scale;
   RegSource source;
+  // Some registers are two's-complement. Register 90 is the clearest case: it
+  // reads AC output power while discharging and the NEGATIVE of the AC input
+  // power while charging, so read unsigned it jumps to ~65000 on the charger.
+  bool is_signed;
 };
 
 // A binary sensor bound to one bit (or bit group) of one register.
@@ -125,30 +127,19 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   void add_ignored_register(uint16_t reg) { this->ignored_registers_.push_back(reg); }
 
   // --- Generic register -> entity binding -------------------------------
-  void add_register_sensor(uint16_t reg, float scale, RegSource source, sensor::Sensor *s) {
-    this->register_sensors_.push_back(RegisterSensor{s, reg, scale, source});
+  void add_register_sensor(uint16_t reg, float scale, RegSource source, bool is_signed, sensor::Sensor *s) {
+    this->register_sensors_.push_back(RegisterSensor{s, reg, scale, source, is_signed});
   }
   void add_register_bit_sensor(uint16_t reg, uint16_t mask, RegSource source, binary_sensor::BinarySensor *s) {
     this->register_bit_sensors_.push_back(RegisterBitSensor{s, reg, mask, source});
   }
 
   // --- Derived entities (computed, not a straight register read) ---------
-  void set_remaining_time_sensor(sensor::Sensor *s) { this->remaining_time_sensor_ = s; }
   void set_connected_binary_sensor(binary_sensor::BinarySensor *s) { this->connected_binary_sensor_ = s; }
   // Is grid/AC power actually present at the input (the outage sensor) -
   // confirmed by direct test against real AC loss on this device.
   void set_grid_power_binary_sensor(binary_sensor::BinarySensor *s) { this->grid_power_binary_sensor_ = s; }
 
-  // Battery capacity in Wh, used to compute remaining_time. Has a compiled-in
-  // default (set via YAML) but is meant to be overridden live from a `number`
-  // entity so it can be bumped later (e.g. after adding an expansion battery)
-  // without reflashing. See the README/example YAML for the number: block.
-  void set_battery_capacity_wh(float wh) { this->battery_capacity_wh_ = wh; }
-  // Lumped derate factor (0-1) covering inverter conversion loss, standby draw,
-  // and any non-linearity in the battery-% reading. NOTE: this may be papering
-  // over a mis-identified register - see the README's discovery notes on regs
-  // 12/13. If a real time-to-empty register turns up, prefer it over this.
-  void set_battery_efficiency(float eff) { this->battery_efficiency_ = eff; }
 
   // --- Probe actions (all reads - no 0x06 writes anywhere) ---------------
   void dump_input_registers();
@@ -163,7 +154,7 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   void store_and_diff_(RegSource source, const uint8_t *frame, uint16_t count);
   void dump_registers_(RegSource source);
   void publish_(RegSource source);
-  bool is_ignored_(uint16_t reg) const;
+  bool is_ignored_(RegSource source, uint16_t reg) const;
   bool ready_();
   static const char *source_name_(RegSource source);
   static uint16_t crc16_modbus_(const uint8_t *data, uint16_t len);
@@ -197,9 +188,6 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   std::vector<RegisterSensor> register_sensors_;
   std::vector<RegisterBitSensor> register_bit_sensors_;
 
-  sensor::Sensor *remaining_time_sensor_{nullptr};
-  float battery_capacity_wh_{1024.0f};
-  float battery_efficiency_{0.85f};
 
   binary_sensor::BinarySensor *connected_binary_sensor_{nullptr};
   binary_sensor::BinarySensor *grid_power_binary_sensor_{nullptr};

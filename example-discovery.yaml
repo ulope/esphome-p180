@@ -31,30 +31,46 @@ wifi:
   password: !secret wifi_password
 
 logger:
-  # DEBUG is deliberate. Every entity logs its state on every publish - once per
-  # poll, per entity, forever - which buries the p180 lines you are reading. That
-  # state logging is VERBOSE, so at DEBUG it compiles out entirely and the log
-  # contains only p180 output. All the discovery output (register dumps, change
-  # lines) is DEBUG, so nothing you need is lost.
   level: DEBUG
   logs:
     p180: DEBUG
 
+    # Entities log their own state on the device at VERBOSE. Which level that
+    # lands on has moved between ESPHome versions, so mute the tags by name
+    # rather than relying on the global level. A per-tag level may only ever be
+    # LESS verbose than `level:` above; WARN still lets real problems through.
+    #
+    # NOTE: this does NOT stop lines like
+    #
+    #   [S][sensor]: 'Battery' >> 64 %
+    #
+    # Those are not device logs at all - aioesphomeapi renders them host-side
+    # from the API state stream, so no logger: setting touches them. Tell them
+    # apart by the missing `tag:line` ([S][sensor] vs [D][p180:330]). Turn them
+    # off with `esphome logs <config>.yaml --no-states`, or the environment
+    # variable ESPHOME_LOG_STATES=false. The dashboard and the Home Assistant
+    # ESPHome Device Builder add-on pass no flag, so they default to showing
+    # them - run the CLI with --no-states for a clean log there.
+    sensor: WARN
+    binary_sensor: WARN
+    button: WARN
+    number: WARN
+
   # Only if you need the p180 frame-level diagnostics (reassembly, stray
   # notifications, CRC detail). Raising the global level to VERBOSE also
-  # un-mutes every other component, so mute the loud ones explicitly:
+  # un-mutes every other component, so mute the loud ones too:
   #
   # level: VERBOSE
   # logs:
   #   p180: VERBOSE
-  #   sensor: INFO          # per-publish entity state - the main offender
-  #   binary_sensor: INFO
-  #   button: INFO
-  #   number: INFO
-  #   ble_client: INFO      # very chatty at VERBOSE
-  #   esp32_ble_tracker: INFO
-  #   api: INFO
-  #   wifi: INFO
+  #   sensor: WARN
+  #   binary_sensor: WARN
+  #   button: WARN
+  #   number: WARN
+  #   ble_client: WARN          # very chatty at VERBOSE
+  #   esp32_ble_tracker: WARN   # ditto, especially with bluetooth_proxy
+  #   api: WARN
+  #   wifi: WARN
 
 external_components:
   - source:
@@ -79,11 +95,15 @@ p180:
   # workhorse: press "Reset Baseline", change exactly one thing on the station,
   # and read off which register moved.
   log_changes: true
-  # Registers that move on their own and would otherwise drown out the signal.
-  # Add to this list as you find more noisy ones.
+  # Status-table registers that move on their own and would otherwise drown out
+  # the signal. This list does not touch the settings table.
+  # NOT 72 - it looked like noise only because every capture was taken at zero
+  # load. Under load it falls monotonically (see the README), which is how a
+  # runtime estimate behaves. Leave it visible.
   ignore_registers: [12, 13, 31]
-  # Ignore +/-1 jitter on analog readings.
-  change_threshold: 1
+  # 0, not 1: with 72 muted by name there is no jitter left to filter, and the
+  # slow-moving registers on a resting unit move by exactly 1.
+  change_threshold: 0
   # Set true to dump the whole table every poll. Very noisy - the dump buttons
   # below are usually what you want instead.
   debug_dump: false
@@ -129,6 +149,101 @@ sensor:
     battery_discharge_power:
       name: "Battery Discharge Power"
       device_id: p180_device
+    # Confirmed: reads 2316 -> 231.6V with AC output on, on a 230V grid.
+    ac_out_voltage:
+      name: "AC Output Voltage"
+      device_id: p180_device
+    ac_out_frequency:
+      name: "AC Output Frequency"
+      device_id: p180_device
+    # 0 = off, one value per mode as you cycle the light button.
+    light_mode:
+      name: "Light Mode"
+      device_id: p180_device
+    # Tracks a USB-C PD load exactly (0 -> 11 -> 15 -> 33 -> 37 W).
+    usb_output_power:
+      name: "USB Output Power"
+      device_id: p180_device
+    # Register 72 - the station's own estimate, confirmed against the unit's
+    # own display. No capacity or efficiency calibration needed. Reads 0 while
+    # charging, when time-to-empty is meaningless.
+    remaining_time:
+      name: "Remaining Time"
+      device_id: p180_device
+    # --- charging (AC input plugged in) ---
+    # Reg 2 = CHARGING power (AC -> battery), not the wall draw. Panel showed
+    # 530W in / 29W out while this read 501; 530 - 29 = 501. For total wall
+    # draw, sum this with output_power - no register reports it.
+    # Read 1002W with the rear switch at 1000W, 501W at 500W.
+    charging_power:
+      name: "Charging Power"
+      device_id: p180_device
+    # Reg 71, the mirror of remaining_time. Matched both charge rates assuming
+    # ~85% charge efficiency.
+    time_to_full:
+      name: "Time To Full"
+      device_id: p180_device
+    # Reg 1. Read 5 at the 1000W switch position, 3 at 500W.
+    charge_rate_step:
+      name: "Charge Rate Step"
+      device_id: p180_device
+    # Reg 90, SIGNED, and NOT a net figure: on battery it is AC output power,
+    # grid-connected it is minus the CHARGING power and stays there even while
+    # the AC output supplies a load. Read unsigned this publishes ~65000.
+    ac_power:
+      name: "AC Power (signed)"
+      device_id: p180_device
+    # --- settings table (0x03) ---
+    # All three measured by changing the value in the AFERIY app and watching
+    # the holding diff: 5 -> 10 min moved reg 25 from 300 to 600 (so: seconds),
+    # 10% -> 16% moved reg 26 from 100 to 160, and 85% -> 88% moved reg 27 from
+    # 850 to 880 (so: tenths of a percent).
+    # Units are NOT uniform: screen-off is seconds, the four standby timers are
+    # minutes. All five measured against the app's "Standby-Zeit" screen.
+    screen_timeout:
+      name: "Screen Timeout"
+      device_id: p180_device
+    ac_standby_time:
+      name: "AC Standby Time"
+      device_id: p180_device
+    dc_standby_time:
+      name: "DC Standby Time"
+      device_id: p180_device
+    usb_standby_time:
+      name: "USB Standby Time"
+      device_id: p180_device
+    device_shutdown_time:
+      name: "Device Shutdown Time"
+      device_id: p180_device
+    discharge_limit:
+      name: "Discharge Limit"
+      device_id: p180_device
+    # The app labels this "AC Ladelimit im ESP modus".
+    ac_charge_limit:
+      name: "AC Charge Limit"
+      device_id: p180_device
+    # 1 A -> 5 A in the app moved holding 23 from 1 to 5.
+    silent_charge_current:
+      name: "Silent Charge Current"
+      device_id: p180_device
+    # Holding 47-50, x0.1 -> v1.1 / v1.6 / v1.2 / v1.3, matching the app's
+    # Firmware-Version screen. Constants, so mark them diagnostic.
+    ac_firmware_version:
+      name: "AC Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    bms_firmware_version:
+      name: "BMS Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    pv_firmware_version:
+      name: "PV Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    panel_firmware_version:
+      name: "Panel Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -136,21 +251,58 @@ sensor:
     #
     # `source:` selects the table: `input` (0x04 status, the default) or
     # `holding` (0x03 settings).
+    # Light mode is now a named sensor (see light_mode above), as are the four
+    # output flags (see binary_sensor below). What is left here is unfinished.
     raw_registers:
-      - register: 41
-        name: "Reg 41 (status bitmask candidate)"
+      # The whole output status register, handy while mapping the last bit.
+      - register: 75
+        name: "Reg 75 (output status bits)"
         device_id: p180_device
-      - register: 39
-        name: "Reg 39 (total output power candidate)"
+      # Non-zero while USB / DC / light are on, and NOT affected by AC output:
+      # 0x0800 light, 0x0837 USB, 0x0980 DC. Meaning still unknown - the values
+      # are not a copy of reg 75, so this is not a second status word.
+      - register: 54
+        name: "Reg 54 (DC-side, unidentified)"
         device_id: p180_device
-      - register: 56
-        name: "Reg 56 (SoC candidate)"
-        scale: 0.1
+      # Reads 0x0010 while AC output is on, and does not respond to the others.
+      - register: 53
+        name: "Reg 53 (AC-side, unidentified)"
         device_id: p180_device
+      # Reg 37: 0x4000 when idle, 0x8000/0x8040 alternating while charging.
+      - register: 37
+        name: "Reg 37 (charge status bits?)"
+        device_id: p180_device
+      # AC OUTPUT energy since power-on, 10Wh (0.01 kWh) per count - confirmed
+      # at three different load levels. Rises only under AC load and holds when
+      # it stops, but RESETS TO 0 when the station restarts, so it is not a
+      # lifetime meter. NOT the fan: it stopped counting three minutes before
+      # the fans audibly ran. NOTE these are INPUT registers, unrelated to the
+      # Sydpower HOLDING 66/67 (discharge floor / charge ceiling).
       - register: 66
+        name: "Reg 66 (high-load flag?)"
+        device_id: p180_device
+      - register: 67
+        name: "Reg 67 (high-load flag?)"
+        device_id: p180_device
+      # --- settings table (0x03), still unidentified ---
+      # Holding 26 and 27 are confirmed and are now named sensors above.
+      # Holding 66/67 read 0 on this unit, so the upstream floor/ceiling pair
+      # does NOT live there - it is at 26/27, with the same tenths scaling.
+      #
+      # 15, next door to the confirmed floor/ceiling pair. Not the discharge
+      # floor - that is 26.
+      - register: 21
         source: holding
-        name: "Holding 66 (discharge floor candidate)"
-        scale: 0.1
+        name: "Holding 21 (unidentified, 15)"
+        device_id: p180_device
+      # Unexplained so far. Everything else in the table reads 0.
+      - register: 4
+        source: holding
+        name: "Holding 4 (unidentified, 800)"
+        device_id: p180_device
+      - register: 7
+        source: holding
+        name: "Holding 7 (unidentified, 1)"
         device_id: p180_device
 
 binary_sensor:
@@ -162,23 +314,44 @@ binary_sensor:
     grid_power:
       name: "Grid Power"
       device_id: p180_device
+    # Confirmed by toggling each output on its own and diffing reg 75.
+    usb_output:
+      name: "USB Output"
+      device_id: p180_device
+    dc_output:
+      name: "DC Output"
+      device_id: p180_device
+    ac_output:
+      name: "AC Output"
+      device_id: p180_device
+    light:
+      name: "Light"
+      device_id: p180_device
+    # ON = DC, OFF = PV. Reg 75 bit 0x0020, confirmed in both directions. This
+    # is a STATUS bit on the P180, not a setting - the P280/P310 map has it at
+    # holding 15, and changing it here leaves the settings table untouched.
+    dc_input_type:
+      name: "DC Input Type is DC"
+      device_id: p180_device
+    # Not an output - the silent-AC-charging mode flag, reg 75 bit 0x0040.
+    # Confirmed in both directions. The current it uses is silent_charge_current
+    # (holding 23), which is a separate setting and does not track this.
+    silent_charging:
+      name: "Silent AC Charging"
+      device_id: p180_device
 
-    # Once the status bitmask register is confirmed, the output flags are pure
-    # YAML. Masks below are the Sydpower/P280 layout - hypotheses, not facts.
+    # All four output flags are confirmed and are now named sensors above -
+    # no masks to copy. Reg 75 is the status register on the P180, NOT reg 41:
+    # reg 41 sat at 0x0000 through every single toggle.
+    #
+    #   0x0002 light   0x0004 DC   0x0008 USB   0x0010 AC
+    #
+    # 0x0001 is still unaccounted for. If you find what sets it, add it here:
     raw_bits:
-      - register: 41
-        bitmask: 0x0800
-        name: "AC Output Active (unconfirmed)"
+      - register: 75
+        bitmask: 0x0001
+        name: "Reg 75 bit 0 (unidentified)"
         device_id: p180_device
-      - register: 41
-        bitmask: 0x0400
-        name: "DC Output Active (unconfirmed)"
-        device_id: p180_device
-      - register: 41
-        bitmask: 0x0200
-        name: "USB Output Active (unconfirmed)"
-        device_id: p180_device
-      - register: 41
-        bitmask: 0x1000
-        name: "Light On (unconfirmed)"
-        device_id: p180_device
+      # Nothing here: 0x0020 and 0x0040 are confirmed and are named sensors
+      # above. Only bit 0x0001 is left on reg 75, and it has never been seen
+      # set - if you find what sets it, add it here.
