@@ -193,6 +193,17 @@ sensor:
     ac_power:
       name: "AC Power (signed)"
       device_id: p180_device
+    # --- settings table (0x03) ---
+    # Both measured by changing the value in the AFERIY app and watching the
+    # holding diff: 10% -> 16% moved reg 26 from 100 to 160, and 85% -> 88%
+    # moved reg 27 from 850 to 880. Tenths of a percent in both cases.
+    discharge_limit:
+      name: "Discharge Limit"
+      device_id: p180_device
+    # The app labels this "AC Ladelimit im ESP modus".
+    ac_charge_limit:
+      name: "AC Charge Limit"
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
@@ -233,35 +244,28 @@ sensor:
       - register: 67
         name: "Reg 67 (high-load flag?)"
         device_id: p180_device
-      # --- settings table (0x03) ---
-      # Holding 66/67 are 0 on this unit, so the upstream discharge-floor /
-      # charge-ceiling pair does NOT live there. These are the registers that
-      # actually came back non-zero in the first settings dump. See the
-      # "Settings table" section of the README for the full table and grading.
+      # --- settings table (0x03), still unidentified ---
+      # Holding 26 and 27 are confirmed and are now named sensors above.
+      # Holding 66/67 read 0 on this unit, so the upstream floor/ceiling pair
+      # does NOT live there - it is at 26/27, with the same tenths scaling.
       #
-      # Holding 28 read 5 while status reg 1 also read 5 (rear switch at
-      # 1000W). Flip the switch to 500W: if this follows reg 1 down to 3, it is
-      # the charge rate setting. 29 holds the other value reg 1 takes, so watch
-      # both.
+      # 28 and 29 read 5 and 3, which are exactly the two values status reg 1
+      # takes at the two rear-switch positions. That is a coincidence: flipping
+      # the switch moved reg 1 but left the whole settings table byte-identical.
+      # Kept visible in case an app-side setting moves them.
       - register: 28
         source: holding
-        name: "Holding 28 (charge rate step?)"
+        name: "Holding 28 (unidentified, 5)"
         device_id: p180_device
       - register: 29
         source: holding
-        name: "Holding 29 (second rate?)"
+        name: "Holding 29 (unidentified, 3)"
         device_id: p180_device
-      # 100 and 15 - a charge ceiling / discharge floor pair would look like
-      # this, but so would several other things, and the scaling (whole percent
-      # vs tenths) is not decidable from one sample. Change the app's charge
-      # limit and watch which one moves.
-      - register: 26
-        source: holding
-        name: "Holding 26 (charge ceiling?)"
-        device_id: p180_device
+      # 15, next door to the confirmed floor/ceiling pair. Not the discharge
+      # floor - that is 26.
       - register: 21
         source: holding
-        name: "Holding 21 (discharge floor?)"
+        name: "Holding 21 (unidentified, 15)"
         device_id: p180_device
       # Round numbers that look like timeouts: 480, 300, 480. Units unknown -
       # 8h/5h or 8min/5min both fit. Change a standby timer in the app.
@@ -281,10 +285,6 @@ sensor:
       - register: 4
         source: holding
         name: "Holding 4 (unidentified, 800)"
-        device_id: p180_device
-      - register: 27
-        source: holding
-        name: "Holding 27 (unidentified, 850)"
         device_id: p180_device
 
 binary_sensor:

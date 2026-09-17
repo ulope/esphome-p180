@@ -40,10 +40,13 @@ def _register_number(value):
 
 CONF_RAW_REGISTERS = "raw_registers"
 
-# Named sensors, each bound to one status (0x04) register.
+# Named sensors, each bound to one register.
 # Offsets confirmed by diffing an AC-connected dump against an on-battery dump on
 # a real P180 (Aug 2026) - NOT the same offsets as the P310/P280 maps.
-# key -> (unit, accuracy_decimals, device_class, register, scale, signed)
+# key -> (unit, accuracy_decimals, device_class, register, scale, signed[, source])
+#
+# `source` defaults to "input" (the 0x04 status table). The two settings
+# registers below are the only ones confirmed in the 0x03 table so far.
 #
 # To promote a newly identified register to a first-class sensor, add one line
 # here. No C++ change is needed.
@@ -77,12 +80,19 @@ REGISTER_SENSORS = {
     # the front panel and an external meter: panel showed 530 W in / 29 W out
     # while this read 501, and 530 - 29 = 501. Total wall draw is this plus
     # output_power; no register reports it directly.
-    # Read 1002 W with the rear switch at 1000 W and 501 W at 500 W.
+    # This is the ACHIEVED rate, not the switch position: it read 501 W at the
+    # 500 W position, but only 751 W at the 1000 W position with the battery at
+    # 77%. An earlier capture saw 1002 W at the same switch position with a
+    # lower SoC, so something (taper, thermal) limits it - do not read this as
+    # a setting.
     "charging_power": ("W", 0, "power", 2, 1.0, False),
     # Time to full. Matched both charge rates to within a few minutes assuming
     # ~85% charge efficiency.
     "time_to_full": ("min", 0, "duration", 71, 1.0, False),
-    # Charge-rate step. Read 5 with the rear switch at 1000 W, 3 at 500 W.
+    # Charge-rate step, and it does track the rear switch: flipping 500 -> 1000 W
+    # moved it 3 -> 5 in the same poll, with reg 2 following 501 -> 760 W five
+    # seconds later. Confirmed in both directions. The switch writes NOTHING
+    # into the settings table - see the README.
     "charge_rate_step": (None, 0, None, 1, 1.0, False),
     # SIGNED, and not a net figure. On battery it reads AC output power and
     # equals reg 12. Grid-connected it reads MINUS the CHARGING power (reg 2)
@@ -90,7 +100,27 @@ REGISTER_SENSORS = {
     # reg 12 went 0 -> 25 -> 46 W while this held at -501. It is NOT minus the
     # wall draw. Read unsigned it publishes ~65000.
     "ac_power": ("W", 0, "power", 90, 1.0, True),
+    # --- settings table (0x03) ---
+    # Discharge floor, tenths of a percent. Measured: changing the app's
+    # discharge limit from 10% to 16% moved holding 26 from 100 to 160.
+    "discharge_limit": ("%", 0, "battery", 26, 0.1, False, "holding"),
+    # Charge ceiling, tenths of a percent. Measured: 85% -> 88% in the app moved
+    # holding 27 from 850 to 880. The German app labels this "AC Ladelimit im
+    # ESP modus"; the mode name is most likely EPS/UPS (the unit stays plugged
+    # in and holds a reserve), but that reading is not confirmed, only the
+    # register and its scaling are.
+    "ac_charge_limit": ("%", 0, "battery", 27, 0.1, False, "holding"),
 }
+
+
+def _entry(spec):
+    """Unpack a table row, defaulting the register source to the status table.
+
+    Most named sensors live in the 0x04 table, so rows carry a source only when
+    they do not - which keeps the common case to six fields.
+    """
+    unit, accuracy, dclass, register, scale, signed = spec[:6]
+    return unit, accuracy, dclass, register, scale, signed, spec[6] if len(spec) > 6 else "input"
 
 # Expose any register without touching C++ - the point of the discovery workflow.
 # Scaling stays in YAML via `scale:` or ESPHome `filters:`.
@@ -129,7 +159,9 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Optional(key): sensor.sensor_schema(
                 **_sensor_kwargs(unit, accuracy, dclass)
             )
-            for key, (unit, accuracy, dclass, _reg, _scale, _signed) in REGISTER_SENSORS.items()
+            for key, (unit, accuracy, dclass, *_) in (
+                (k, _entry(v)) for k, v in REGISTER_SENSORS.items()
+            )
         },
     }
 )
@@ -138,14 +170,16 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     parent = await cg.get_variable(config[CONF_P180_ID])
 
-    for key, (_unit, _accuracy, _dclass, register, scale, signed) in REGISTER_SENSORS.items():
-        if key in config:
-            sens = await sensor.new_sensor(config[key])
-            cg.add(
-                parent.add_register_sensor(
-                    register, scale, REG_SOURCES["input"], signed, sens
-                )
+    for key, spec in REGISTER_SENSORS.items():
+        if key not in config:
+            continue
+        _unit, _accuracy, _dclass, register, scale, signed, source = _entry(spec)
+        sens = await sensor.new_sensor(config[key])
+        cg.add(
+            parent.add_register_sensor(
+                register, scale, REG_SOURCES[source], signed, sens
             )
+        )
 
     for conf in config.get(CONF_RAW_REGISTERS, []):
         sens = await sensor.new_sensor(conf)

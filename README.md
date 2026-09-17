@@ -57,10 +57,11 @@ finding. Only trust a row as far as its grade.
 | 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
 | 66 / 67 | increment together under AC load | **AC output energy since power-on, 10 Wh per count.** Resets to 0 on restart — not a lifetime meter | **measured** — reset seen directly in a post-reboot capture (8 → 0); *inferred* that it is AC rather than total output |
 | 11 | `500` | AC output frequency, 50.0 Hz nominal even with output off | **inferred** — never seen change |
-| 2 | `1002` at the 1000 W switch setting, `501` at 500 W | **Charging power (W)** — `charging_power`. AC→battery only, *not* the wall draw | **measured** — cross-checked against the front panel and an external meter |
+| 2 | `501` at the 500 W switch setting; `1002` then later only `751` at 1000 W | **Charging power (W)** — `charging_power`. AC→battery only, *not* the wall draw, and the *achieved* rate rather than the setting | **measured** — cross-checked against the front panel and an external meter. The 751 W sample was at 77 % SoC, so something limits the rate; mechanism **unconfirmed** |
 | 71 | `34` at 1000 W, `67` at 500 W | **Time to full, minutes** — `time_to_full`. Mirror of reg 72 | **measured** — both rates match to a few minutes assuming ~85% charge efficiency |
 | 90 | `+1095` discharging, `-1002` charging | **Signed AC power (W)** — `ac_power`. On battery it is AC output; grid-connected it is −AC input, *even with an output load* | **measured** — equals −reg 2 on every charging sample, including while the AC output supplied 46 W |
-| 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step` | **measured**, but only two switch positions sampled — do not extrapolate a formula |
+| 1 | `5` at the 1000 W setting, `3` at 500 W | **AC charge-rate step** — `charge_rate_step`. Tracks the rear switch; the switch writes nothing into the settings table | **measured** in both directions — a live flip moved it 3 → 5 with reg 2 following. Only two switch positions sampled, so do not extrapolate a formula |
+| h26 / h27 | `100`→`160`, `850`→`880` | **Discharge floor / charge ceiling, ×0.1 %** — `discharge_limit`, `ac_charge_limit`. In the **settings** (`0x03`) table, not the status table | **measured** — each moved when the matching value was changed in the app |
 | 37 | `0x4000` idle, `0x8000`/`0x8040` charging | charge status bitmask? | **guess** — only that it changes with charging |
 | 53 | `0x10` AC out, `0x68` AC in, `0x78` both | additive status bitmask | **inferred** — the three values add up, but no bit is individually confirmed |
 | 13 | `0` with all outputs off; an offset of 12–155 W with AC energised | **Output-attributed power, watts** — never includes station self-consumption; the AC-idle offset varies *between sessions* and is sometimes plain wrong | **measured** — unit, additivity, and 0-with-outputs-off; the high idle figures are refuted by a 13-minute SoC hold. Mechanism **unknown** |
@@ -618,8 +619,8 @@ Run with `log_changes: true` and `ignore_registers: [12, 13, 31]`, pressing
 | 11 | Let SoC move ≥1% while discharging | SoC scaling, time-to-empty / time-to-full |
 | 12 | Long idle / sustained high load | temperature registers |
 | 13 | Press **Probe Extended Registers** | whether >100 registers exist |
-| 14 | Flip the rear 1000 W / 500 W input switch, then dump settings | **tests holding 28/29** — see the settings table below |
-| 15 | Change a setting in the AFERIY app | the settings table diffs on its own, once per `settings_interval` |
+| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how holding 26/27 were mapped |
+| 15 | Flip the rear 1000 W / 500 W input switch | status reg 1 (3 ↔ 5) and reg 2. *Not* the settings table — it does not move |
 
 ### Upstream maps — hypotheses, not answers
 
@@ -645,13 +646,10 @@ USB/DC/AC output toggles · 27 light mode · 56 key sound · 57 AC silent
 charging · 59-61 standby timers · 62 screen rest (seconds) ·
 66 discharge floor (÷10 %) · 67 AC charge ceiling (÷10 %) · 68 sleep minutes.
 
-### Settings table (`0x03`) — first dump
+### Settings table (`0x03`)
 
-The settings table does answer. Until this capture it never had, which is why
-everything below is a single snapshot with no diff behind it — read the grading
-column and treat the guesses as guesses.
-
-80 registers, of which 15 are non-zero, captured with AC input connected:
+The settings table answers, and two of its registers are now mapped. 80
+registers, 15 of them non-zero:
 
 ```
 holding regs 000-015: 0000 0000 0000 0000 0320 0000 0000 0001 0000 0000 0000 0000 0000 0000 0000 0000
@@ -661,36 +659,48 @@ holding regs 048-063: 0010 000C 000D 0000 0000 0000 0000 0000 0000 0000 0000 000
 holding regs 064-079: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
 ```
 
-| Reg | Hex | Dec | Candidate | Evidence |
-|---|---|---|---|---|
-| 4 | `0320` | 800 | — | **unexplained**. A round 800; does not match either rear-switch position (1000/500) |
-| 7 | `0001` | 1 | a flag | **guess** |
-| 21 | `000F` | 15 | discharge floor %? | **guess** — pairs suggestively with 26 |
-| 23 | `0001` | 1 | a flag | **guess** |
-| 24 | `01E0` | 480 | a timeout (8 h, or 8 min if seconds) | **guess** — round, and 30 repeats it |
-| 25 | `012C` | 300 | a timeout (5 h / 5 min) | **guess** |
-| 26 | `0064` | 100 | charge ceiling % (or discharge floor at ÷10 → 10.0 %) | **guess** — scaling is genuinely ambiguous from one sample |
-| 27 | `0352` | 850 | — | **unexplained** |
-| 28 | `0005` | 5 | AC charge rate step | **inferred** — status reg 1 read exactly 5 at the 1000 W switch position and 3 at 500 W. Flip the switch and re-dump to settle it |
-| 29 | `0003` | 3 | a second rate, or the other switch position | **guess** — note it holds the *other* value status reg 1 takes |
-| 30 | `01E0` | 480 | a timeout, same units as 24 | **guess** |
-| 47-50 | `0B 10 0C 0D` | 11, 16, 12, 13 | firmware/version fields | **guess** — four small numbers in a row, at the offsets upstream uses for versions (in its *status* table) |
+| Reg | Dec | Field | Evidence |
+|---|---|---|---|
+| 4 | 800 | — | unexplained |
+| 7 | 1 | a flag | **guess** |
+| 21 | 15 | — | unexplained. Adjacent to the floor/ceiling pair but not part of it |
+| 23 | 1 | a flag | **guess** |
+| 24 | 480 | a timeout (8 h, or 8 min if seconds) | **guess** — round, and 30 repeats it |
+| 25 | 300 | a timeout (5 h / 5 min) | **guess** |
+| **26** | **100 → 160** | **Discharge floor, tenths of a percent** — `discharge_limit` | **measured**: the app's discharge limit 10 % → 16 % moved it 100 → 160 |
+| **27** | **850 → 880** | **Charge ceiling, tenths of a percent** — `ac_charge_limit` | **measured**: the app's "AC Ladelimit im ESP modus" 85 % → 88 % moved it 850 → 880 |
+| 28 | 5 | — | unexplained; see the refutation below |
+| 29 | 3 | — | unexplained; see the refutation below |
+| 30 | 480 | a timeout, same units as 24 | **guess** |
+| 47-50 | 11, 16, 12, 13 | firmware/version fields | **guess** — four small numbers in a row, at the offsets upstream uses for versions (in its *status* table) |
 
 Everything else reads `0000`.
 
-**Negative result: the upstream settings map does not transfer.** The P280/P310
-map puts the USB/DC/AC output toggles at holding 24/25/26 and light mode at 27.
-On this unit those read 480, 300, 100 and 850 — no encoding of an on/off toggle
-produces 480. This is the same story as status reg 41 versus reg 75: the
-offsets are the P180's own. Upstream holding 66/67 (discharge floor / charge
-ceiling) read `0000` here, so that pair does not transfer either.
+**The floor/ceiling pair transfers; its offsets do not.** Upstream P280/P310
+have exactly this pair — discharge floor and AC charge ceiling, both in tenths
+of a percent — at holding 66/67. On the P180 those read `0000` and the pair
+lives at **26/27**, with the same scaling. Same fields, relocated. The rest of
+the upstream settings map does not transfer either: it puts the USB/DC/AC
+output toggles at holding 24/25/26 and light mode at 27, and here those read
+480, 300, 100 and 850 — no encoding of an on/off toggle produces 480.
 
-**How to make progress on it.** No button-pressing loop is needed: with
+**The rear 1000 W / 500 W switch writes nothing into the settings table.**
+Flipping it 500 → 1000 W moved status reg 1 from 3 to 5 in the same poll, with
+reg 2 following 501 → 760 W five seconds later — but dumps taken either side of
+the flip are byte-identical across all 80 registers. It is a hardware switch,
+and the settings table only carries what the app can set.
+
+That also refutes an earlier guess here: holding 28 and 29 read 5 and 3, which
+are exactly the two values status reg 1 takes at the two switch positions, and
+that looked like the charge-rate setting. It was a coincidence — both held
+still through the flip. Two registers matching two observed values is not
+evidence; only a register that *moves with* the thing is.
+
+**How to map more of it.** No button-pressing loop is needed: with
 `settings_interval` at its 60 s default and `log_changes: true`, the component
-diffs the settings table on its own, so changing a setting in the AFERIY app
-produces a `holding reg NN: ... -> ...` line within a minute. The rear
-1000 W / 500 W switch is the cheapest first test, because status reg 1 already
-gives a known-good value to check holding 28 against.
+diffs the settings table on its own, so changing a setting in the app produces
+a `holding reg NN: ... -> ...` line within a minute. That is how 26 and 27 were
+pinned down, and it is the only method that has worked on this table.
 
 ## Why there are no writes
 
@@ -909,9 +919,9 @@ characteristic. Harmless — it's discarded — but worth a look at `VERBOSE` le
   battery discharge power, remaining time, connection state
 - ✅ Derived grid-power (outage) binary sensor — confirmed by direct test
 - ✅ Any register or status bit exposed from YAML, no C++ change
-- ✅ Settings table (`0x03`) read alongside the status table — confirmed to
-  answer on a P180 Pro, 15 of its 80 registers non-zero; see
-  [Settings table](#settings-table-0x03--first-dump)
+- ✅ Settings table (`0x03`) read alongside the status table, with
+  `discharge_limit` and `ac_charge_limit` mapped out of it; see
+  [Settings table](#settings-table-0x03)
 - ✅ Changed-register diff logging, chunked full dumps, extended-range probe
 - ✅ Offline diff tooling (`tools/regdiff.py`)
 - ⬜ Named sensors for USB/DC/AC/light status, per-port USB watts, temperatures,
