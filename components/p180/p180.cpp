@@ -312,7 +312,15 @@ void P180Component::handle_frame_(const uint8_t *frame, uint16_t len, uint8_t fu
   this->publish_(source);
 }
 
-bool P180Component::is_ignored_(uint16_t reg) const {
+bool P180Component::is_ignored_(RegSource source, uint16_t reg) const {
+  // Status-table only. The list exists to mute registers that move on their own
+  // (power, SoC), which is a property of the 0x04 table; the settings table is
+  // polled a minute apart and barely moves. Applying the same offsets to both
+  // would silently drop a real settings change that happened to land on 12, 13
+  // or 31 - exactly the registers the documented example mutes.
+  if (source != REG_SOURCE_INPUT) {
+    return false;
+  }
   return std::find(this->ignored_registers_.begin(), this->ignored_registers_.end(), reg) !=
          this->ignored_registers_.end();
 }
@@ -324,7 +332,7 @@ void P180Component::store_and_diff_(RegSource source, const uint8_t *frame, uint
   for (uint16_t i = 0; i < count; i++) {
     const uint16_t value =
         (static_cast<uint16_t>(frame[P180_HEADER_LEN + i * 2]) << 8) | frame[P180_HEADER_LEN + i * 2 + 1];
-    if (diff && value != regs[i] && !this->is_ignored_(i)) {
+    if (diff && value != regs[i] && !this->is_ignored_(source, i)) {
       const uint16_t delta = value > regs[i] ? value - regs[i] : regs[i] - value;
       if (delta > this->change_threshold_) {
         ESP_LOGD(TAG, "%s reg %u: 0x%04X -> 0x%04X (%u -> %u)", source_name_(source), static_cast<unsigned>(i),

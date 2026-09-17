@@ -448,7 +448,9 @@ the P280 map.
 
 Use `ignore_registers:` to silence registers that move on their own (power,
 SoC) so a deliberate change stands out, and `change_threshold: 1` to filter
-±1 jitter on analog readings.
+±1 jitter on analog readings. `ignore_registers:` applies to the **status**
+table only — the settings table is polled a minute apart and barely moves, so
+muting the same offsets there would only risk hiding a real settings change.
 
 ### Keeping the log readable
 
@@ -616,7 +618,8 @@ Run with `log_changes: true` and `ignore_registers: [12, 13, 31]`, pressing
 | 11 | Let SoC move ≥1% while discharging | SoC scaling, time-to-empty / time-to-full |
 | 12 | Long idle / sustained high load | temperature registers |
 | 13 | Press **Probe Extended Registers** | whether >100 registers exist |
-| 14 | Press **Dump Settings Registers**, change a setting in the app, dump again | settings table semantics |
+| 14 | Flip the rear 1000 W / 500 W input switch, then dump settings | **tests holding 28/29** — see the settings table below |
+| 15 | Change a setting in the AFERIY app | the settings table diffs on its own, once per `settings_interval` |
 
 ### Upstream maps — hypotheses, not answers
 
@@ -641,6 +644,53 @@ Settings (`0x03`): 13 AC charge rate step · 15 DC input type · 24/25/26
 USB/DC/AC output toggles · 27 light mode · 56 key sound · 57 AC silent
 charging · 59-61 standby timers · 62 screen rest (seconds) ·
 66 discharge floor (÷10 %) · 67 AC charge ceiling (÷10 %) · 68 sleep minutes.
+
+### Settings table (`0x03`) — first dump
+
+The settings table does answer. Until this capture it never had, which is why
+everything below is a single snapshot with no diff behind it — read the grading
+column and treat the guesses as guesses.
+
+80 registers, of which 15 are non-zero, captured with AC input connected:
+
+```
+holding regs 000-015: 0000 0000 0000 0000 0320 0000 0000 0001 0000 0000 0000 0000 0000 0000 0000 0000
+holding regs 016-031: 0000 0000 0000 0000 0000 000F 0000 0001 01E0 012C 0064 0352 0005 0003 01E0 0000
+holding regs 032-047: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 000B
+holding regs 048-063: 0010 000C 000D 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+holding regs 064-079: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+```
+
+| Reg | Hex | Dec | Candidate | Evidence |
+|---|---|---|---|---|
+| 4 | `0320` | 800 | — | **unexplained**. A round 800; does not match either rear-switch position (1000/500) |
+| 7 | `0001` | 1 | a flag | **guess** |
+| 21 | `000F` | 15 | discharge floor %? | **guess** — pairs suggestively with 26 |
+| 23 | `0001` | 1 | a flag | **guess** |
+| 24 | `01E0` | 480 | a timeout (8 h, or 8 min if seconds) | **guess** — round, and 30 repeats it |
+| 25 | `012C` | 300 | a timeout (5 h / 5 min) | **guess** |
+| 26 | `0064` | 100 | charge ceiling % (or discharge floor at ÷10 → 10.0 %) | **guess** — scaling is genuinely ambiguous from one sample |
+| 27 | `0352` | 850 | — | **unexplained** |
+| 28 | `0005` | 5 | AC charge rate step | **inferred** — status reg 1 read exactly 5 at the 1000 W switch position and 3 at 500 W. Flip the switch and re-dump to settle it |
+| 29 | `0003` | 3 | a second rate, or the other switch position | **guess** — note it holds the *other* value status reg 1 takes |
+| 30 | `01E0` | 480 | a timeout, same units as 24 | **guess** |
+| 47-50 | `0B 10 0C 0D` | 11, 16, 12, 13 | firmware/version fields | **guess** — four small numbers in a row, at the offsets upstream uses for versions (in its *status* table) |
+
+Everything else reads `0000`.
+
+**Negative result: the upstream settings map does not transfer.** The P280/P310
+map puts the USB/DC/AC output toggles at holding 24/25/26 and light mode at 27.
+On this unit those read 480, 300, 100 and 850 — no encoding of an on/off toggle
+produces 480. This is the same story as status reg 41 versus reg 75: the
+offsets are the P180's own. Upstream holding 66/67 (discharge floor / charge
+ceiling) read `0000` here, so that pair does not transfer either.
+
+**How to make progress on it.** No button-pressing loop is needed: with
+`settings_interval` at its 60 s default and `log_changes: true`, the component
+diffs the settings table on its own, so changing a setting in the AFERIY app
+produces a `holding reg NN: ... -> ...` line within a minute. The rear
+1000 W / 500 W switch is the cheapest first test, because status reg 1 already
+gives a known-good value to check holding 28 against.
 
 ## Why there are no writes
 
@@ -793,7 +843,7 @@ target and expect Home Assistant to discover it as a new device.
 | `settings_interval` | `60s` | How often to read the settings table (`0x03`). `0s` disables |
 | `log_changes` | `false` | Log registers that changed since the previous frame |
 | `debug_dump` | `false` | Dump the whole table every poll (very noisy) |
-| `ignore_registers` | `[]` | Registers to exclude from change logging |
+| `ignore_registers` | `[]` | Status-table (`0x04`) registers to exclude from change logging. Does not affect the settings table |
 | `change_threshold` | `0` | Suppress changes of this magnitude or less |
 
 ### `sensor:` platform
@@ -859,7 +909,9 @@ characteristic. Harmless — it's discarded — but worth a look at `VERBOSE` le
   battery discharge power, remaining time, connection state
 - ✅ Derived grid-power (outage) binary sensor — confirmed by direct test
 - ✅ Any register or status bit exposed from YAML, no C++ change
-- ✅ Settings table (`0x03`) read alongside the status table
+- ✅ Settings table (`0x03`) read alongside the status table — confirmed to
+  answer on a P180 Pro, 15 of its 80 registers non-zero; see
+  [Settings table](#settings-table-0x03--first-dump)
 - ✅ Changed-register diff logging, chunked full dumps, extended-range probe
 - ✅ Offline diff tooling (`tools/regdiff.py`)
 - ⬜ Named sensors for USB/DC/AC/light status, per-port USB watts, temperatures,

@@ -95,7 +95,8 @@ p180:
   # workhorse: press "Reset Baseline", change exactly one thing on the station,
   # and read off which register moved.
   log_changes: true
-  # Registers that move on their own and would otherwise drown out the signal.
+  # Status-table registers that move on their own and would otherwise drown out
+  # the signal. This list does not touch the settings table.
   # NOT 72 - it looked like noise only because every capture was taken at zero
   # load. Under load it falls monotonically (see the README), which is how a
   # runtime estimate behaves. Leave it visible.
@@ -232,10 +233,58 @@ sensor:
       - register: 67
         name: "Reg 67 (high-load flag?)"
         device_id: p180_device
-      - register: 66
+      # --- settings table (0x03) ---
+      # Holding 66/67 are 0 on this unit, so the upstream discharge-floor /
+      # charge-ceiling pair does NOT live there. These are the registers that
+      # actually came back non-zero in the first settings dump. See the
+      # "Settings table" section of the README for the full table and grading.
+      #
+      # Holding 28 read 5 while status reg 1 also read 5 (rear switch at
+      # 1000W). Flip the switch to 500W: if this follows reg 1 down to 3, it is
+      # the charge rate setting. 29 holds the other value reg 1 takes, so watch
+      # both.
+      - register: 28
         source: holding
-        name: "Holding 66 (discharge floor candidate)"
-        scale: 0.1
+        name: "Holding 28 (charge rate step?)"
+        device_id: p180_device
+      - register: 29
+        source: holding
+        name: "Holding 29 (second rate?)"
+        device_id: p180_device
+      # 100 and 15 - a charge ceiling / discharge floor pair would look like
+      # this, but so would several other things, and the scaling (whole percent
+      # vs tenths) is not decidable from one sample. Change the app's charge
+      # limit and watch which one moves.
+      - register: 26
+        source: holding
+        name: "Holding 26 (charge ceiling?)"
+        device_id: p180_device
+      - register: 21
+        source: holding
+        name: "Holding 21 (discharge floor?)"
+        device_id: p180_device
+      # Round numbers that look like timeouts: 480, 300, 480. Units unknown -
+      # 8h/5h or 8min/5min both fit. Change a standby timer in the app.
+      - register: 24
+        source: holding
+        name: "Holding 24 (timeout?)"
+        device_id: p180_device
+      - register: 25
+        source: holding
+        name: "Holding 25 (timeout?)"
+        device_id: p180_device
+      - register: 30
+        source: holding
+        name: "Holding 30 (timeout?)"
+        device_id: p180_device
+      # Unexplained so far.
+      - register: 4
+        source: holding
+        name: "Holding 4 (unidentified, 800)"
+        device_id: p180_device
+      - register: 27
+        source: holding
+        name: "Holding 27 (unidentified, 850)"
         device_id: p180_device
 
 binary_sensor:

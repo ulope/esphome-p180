@@ -154,7 +154,7 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   void store_and_diff_(RegSource source, const uint8_t *frame, uint16_t count);
   void dump_registers_(RegSource source);
   void publish_(RegSource source);
-  bool is_ignored_(uint16_t reg) const;
+  bool is_ignored_(RegSource source, uint16_t reg) const;
   bool ready_();
   static const char *source_name_(RegSource source);
   static uint16_t crc16_modbus_(const uint8_t *data, uint16_t len);
