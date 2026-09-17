@@ -119,6 +119,21 @@ REGISTER_SENSORS = {
     "dc_standby_time": ("min", 0, "duration", 30, 1.0, False, "holding"),
     "usb_standby_time": ("min", 0, "duration", 29, 1.0, False, "holding"),
     "device_shutdown_time": ("min", 0, "duration", 28, 1.0, False, "holding"),
+    # Firmware versions, ×0.1 (11 -> v1.1). Matched against the app's
+    # Firmware-Version screen, which listed AC v1.1, BMS-V1 v1.6, AC-V1-02 v1.1,
+    # PV v1.2, Panel-V1 v1.3 against register values 11, 16, 12, 13.
+    #
+    # 48/49/50 are pinned by value alone - only one listed component has v1.6,
+    # one v1.2, one v1.3 - so no ordering assumption is needed for those three.
+    # 47 reads 11 and TWO components are v1.1 (AC and AC-V1-02), so which of the
+    # two it is rests on list order. There are five components and four
+    # registers, so one of them is simply not in this table.
+    #
+    # These do not change, so set entity_category: diagnostic in YAML.
+    "ac_firmware_version": (None, 1, None, 47, 0.1, False, "holding"),
+    "bms_firmware_version": (None, 1, None, 48, 0.1, False, "holding"),
+    "pv_firmware_version": (None, 1, None, 49, 0.1, False, "holding"),
+    "panel_firmware_version": (None, 1, None, 50, 0.1, False, "holding"),
     # Silent-AC-charging current, amps. Measured: 1 A -> 5 A in the app moved
     # holding 23 from 1 to 5. NOTE it already read 1 before the feature was ever
     # touched, so it is the stored current, not an on/off state - the enable

@@ -625,7 +625,7 @@ Run with `log_changes: true` and `ignore_registers: [12, 13, 31]`, pressing
 | 11 | Let SoC move ≥1% while discharging | SoC scaling, time-to-empty / time-to-full |
 | 12 | Long idle / sustained high load | temperature registers |
 | 13 | Press **Probe Extended Registers** | whether >100 registers exist |
-| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how all eight mapped settings registers were found |
+| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how eight of the twelve mapped settings registers were found |
 | 15 | Flip the rear 1000 W / 500 W input switch | status reg 1 (3 ↔ 5) and reg 2. *Not* the settings table — it does not move |
 
 ### Upstream maps — hypotheses, not answers
@@ -660,7 +660,7 @@ type is upstream's holding 15, and on the P180 it is a bit of status reg 75. See
 
 ### Settings table (`0x03`)
 
-The settings table answers, and 8 of its 15 non-zero registers are mapped. 80
+The settings table answers, and 12 of its 15 non-zero registers are mapped. 80
 registers total, at rest:
 
 ```
@@ -685,11 +685,10 @@ points and a matching app label.
 | **28** | 5 → 480 | **Whole-device shutdown, minutes** — `device_shutdown_time` | Gesamtgerät-Abschaltzeit, 5 min → 480 min |
 | **29** | 3 → 10 | **USB idle standby, minutes** — `usb_standby_time` | USB-Leerlaufstandby-Zeit, 3 min → 10 min |
 | **30** | 480 → 1440 | **DC idle standby, minutes** — `dc_standby_time` | DC-Leerlaufstandby-Zeit, 8 h → 24 h |
+| **47-50** | 11, 16, 12, 13 | **Firmware versions, ×0.1** — `ac_firmware_version`, `bms_firmware_version`, `pv_firmware_version`, `panel_firmware_version` | Firmware-Version: AC v1.1, BMS-V1 v1.6, PV v1.2, Panel-V1 v1.3 |
 
-Still unidentified: 4 (`800`), 7 (`1`), 21 (`15`), and 47-50
-(`11, 16, 12, 13` — four small numbers in a row, at the offsets upstream uses
-for firmware versions in its *status* table, which is a **guess**). Everything
-else reads `0000`.
+Still unidentified: 4 (`800`), 7 (`1`) and 21 (`15`). Everything else reads
+`0000`.
 
 **The units are not uniform.** Screen-off is in seconds; all four standby
 timers are in minutes. The two are adjacent in the table — 24 and 25 sit next
@@ -732,6 +731,15 @@ pinned down, and it is the only method that has worked on this table.
 capture the battery sat at 90 % (status reg 31 = `0x5A`) with holding 27 at
 `900`, mains present at 232.7 V, and `charging_power` reading exactly `0`. The
 station had stopped charging at the value in that register.
+
+**The firmware versions were matched differently from everything else here.**
+There is no before/after transition behind them — you cannot change a firmware
+version to watch a register move. Instead all four values were matched against
+the app's Firmware-Version screen at once, and three of them are pinned by
+value alone: exactly one listed component is v1.6, one v1.2, one v1.3, so 48,
+49 and 50 need no assumption about list order. Only 47 rests on ordering, since
+it reads `11` and *two* components are v1.1 (AC and AC-V1-02). The app lists
+five components and the table has four registers, so one is not exposed here.
 
 **Two "settings" are not in the settings table at all.** Silent AC charging
 and the DC input type both move status reg 75 and leave all 80 holding
@@ -962,10 +970,10 @@ characteristic. Harmless — it's discarded — but worth a look at `VERBOSE` le
   battery discharge power, remaining time, connection state
 - ✅ Derived grid-power (outage) binary sensor — confirmed by direct test
 - ✅ Any register or status bit exposed from YAML, no C++ change
-- ✅ Settings table (`0x03`) read alongside the status table, with eight
+- ✅ Settings table (`0x03`) read alongside the status table, with twelve
   registers mapped out of it — the four standby timers, the screen timeout, the
-  charge/discharge limits and the silent-charging current; see
-  [Settings table](#settings-table-0x03)
+  charge/discharge limits, the silent-charging current and four firmware
+  versions; see [Settings table](#settings-table-0x03)
 - ✅ Changed-register diff logging, chunked full dumps, extended-range probe
 - ✅ Offline diff tooling (`tools/regdiff.py`)
 - ⬜ Named sensors for USB/DC/AC/light status, per-port USB watts, temperatures,

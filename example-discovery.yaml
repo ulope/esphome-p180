@@ -226,6 +226,24 @@ sensor:
     silent_charge_current:
       name: "Silent Charge Current"
       device_id: p180_device
+    # Holding 47-50, x0.1 -> v1.1 / v1.6 / v1.2 / v1.3, matching the app's
+    # Firmware-Version screen. Constants, so mark them diagnostic.
+    ac_firmware_version:
+      name: "AC Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    bms_firmware_version:
+      name: "BMS Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    pv_firmware_version:
+      name: "PV Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
+    panel_firmware_version:
+      name: "Panel Firmware"
+      entity_category: diagnostic
+      device_id: p180_device
 
     # Candidate registers under investigation. Add an entry here the moment a
     # diff line points at something interesting - no C++ change, no reflash of
