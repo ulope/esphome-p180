@@ -57,6 +57,13 @@ BIT_SENSORS = {
     "dc_output": ("power", 75, 0x0004),
     "usb_output": ("power", 75, 0x0008),
     "ac_output": ("power", 75, 0x0010),
+    # Not an output either: the DC input type. ON = DC, OFF = PV. Confirmed in
+    # both directions - PV -> DC took reg 75 from 0x0010 to 0x0030 and DC -> PV
+    # took it back, with all 80 holding registers byte-identical each time. The
+    # P280/P310 map has this as a SETTING at holding 15; on the P180 it is a
+    # status bit, so check reg 75 before concluding the settings table lacks
+    # something.
+    "dc_input_type": (None, 75, 0x0020),
     # Not an output: the silent-AC-charging mode flag. Confirmed in BOTH
     # directions - enabling it in the app took reg 75 from 0x0010 to 0x0050 and
     # disabling it took 0x0050 back to 0x0010, with nothing else in the status

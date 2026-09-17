@@ -32,18 +32,20 @@ and diffing:
 at `0x0000` through every single toggle, so the Sydpower/P280 layout does not
 apply to this device.
 
-| Mask | Output | How it was confirmed |
+| Mask | Meaning | How it was confirmed |
 |---|---|---|
+| `0x0001` | *unidentified* | never seen set |
 | `0x0002` | Light | 2 on/off cycles |
 | `0x0004` | DC output | 2 on/off cycles |
 | `0x0008` | USB output | 5 on/off cycles |
 | `0x0010` | AC output | 3 on/off cycles |
-| `0x0040` | Silent AC charging (a mode, not an output) | **measured** — `0x0010` → `0x0050` on enable and back to `0x0010` on disable, with nothing else in the status table moving either time |
-| `0x0020` | DC input type is DC (vs PV)? | **inferred** — set when the type was switched PV → DC, with the settings table byte-identical either side. **One transition, one direction**; switch back to PV to confirm the polarity |
-| `0x0001` | *unidentified* | never seen set |
+| `0x0020` | DC input type — set = DC, clear = PV | **measured** — set on PV → DC, cleared on DC → PV, with all 80 holding registers byte-identical each time |
+| `0x0040` | Silent AC charging | **measured** — `0x0010` → `0x0050` on enable, back to `0x0010` on disable, with nothing else in the status table moving either time |
 
-The outputs and the silent-charging flag are named binary sensors: `light`,
-`dc_output`, `usb_output`, `ac_output`, `silent_charging`.
+Not every bit is an output: `0x0020` and `0x0040` are modes.
+
+Every bit except `0x0001` is a named binary sensor: `light`, `dc_output`,
+`usb_output`, `ac_output`, `dc_input_type` and `silent_charging`.
 
 Everything below is graded by how far the evidence actually goes. **Measured**
 means observed directly and cross-checked; **inferred** means it fits the data
@@ -733,9 +735,10 @@ station had stopped charging at the value in that register.
 
 **Two "settings" are not in the settings table at all.** Silent AC charging
 and the DC input type both move status reg 75 and leave all 80 holding
-registers byte-identical. The upstream map puts DC input type at holding 15;
-on the P180 it is a status bit. So when a setting does not show up in a holding
-diff, check reg 75 before concluding the table does not carry it.
+registers byte-identical — four transitions in total, two each way. The
+upstream map puts DC input type at holding 15; on the P180 it is a status bit.
+So when a setting does not show up in a holding diff, check reg 75 before
+concluding the table does not carry it.
 
 **Holding 23 is the stored current, not an on/off state.** It held at `5`
 straight through disabling silent charging, which is the same conclusion its
