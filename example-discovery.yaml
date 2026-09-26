@@ -1,8 +1,8 @@
 # P180 register discovery config.
 #
 # Flash this once, then do every experiment from the Home Assistant UI and the
-# ESPHome log - no recompile needed per register. See the "Register discovery"
-# section of the README for the experiment matrix.
+# ESPHome log - no recompile needed per register. See the "Discovery workflow"
+# section of REGISTERS.md for the experiment matrix.
 #
 # This config is read-only. The component never issues Modbus writes.
 #
@@ -98,7 +98,7 @@ p180:
   # Status-table registers that move on their own and would otherwise drown out
   # the signal. This list does not touch the settings table.
   # NOT 72 - it looked like noise only because every capture was taken at zero
-  # load. Under load it falls monotonically (see the README), which is how a
+  # load. Under load it falls monotonically (see REGISTERS.md), which is how a
   # runtime estimate behaves. Leave it visible.
   ignore_registers: [12, 13, 31]
   # 0, not 1: with 72 muted by name there is no jitter left to filter, and the

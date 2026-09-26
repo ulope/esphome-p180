@@ -32,7 +32,7 @@ def _register_number(value):
         _LOGGER.warning(
             "p180: register %d is above the station's %d real registers. The extended "
             "range is answered but holds comms-buffer memory, not telemetry, so this "
-            "entity will publish meaningless values. See the README.",
+            "entity will publish meaningless values. See REGISTERS.md.",
             value, REAL_REGISTER_COUNT,
         )
     return value
@@ -92,7 +92,7 @@ REGISTER_SENSORS = {
     # Charge-rate step, and it does track the rear switch: flipping 500 -> 1000 W
     # moved it 3 -> 5 in the same poll, with reg 2 following 501 -> 760 W five
     # seconds later. Confirmed in both directions. The switch writes NOTHING
-    # into the settings table - see the README.
+    # into the settings table - see REGISTERS.md.
     "charge_rate_step": (None, 0, None, 1, 1.0, False),
     # SIGNED, and not a net figure. On battery it reads AC output power and
     # equals reg 12. Grid-connected it reads MINUS the CHARGING power (reg 2)
@@ -137,7 +137,7 @@ REGISTER_SENSORS = {
     # Silent-AC-charging current, amps. Measured: 1 A -> 5 A in the app moved
     # holding 23 from 1 to 5. NOTE it already read 1 before the feature was ever
     # touched, so it is the stored current, not an on/off state - the enable
-    # flag is most likely status reg 75 bit 0x0040 (see the README, inferred).
+    # flag is status reg 75 bit 0x0040.
     "silent_charge_current": ("A", 0, "current", 23, 1.0, False, "holding"),
     # Discharge floor, tenths of a percent. Measured: changing the app's
     # discharge limit from 10% to 16% moved holding 26 from 100 to 160.

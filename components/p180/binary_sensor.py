@@ -31,7 +31,7 @@ def _register_number(value):
         _LOGGER.warning(
             "p180: register %d is above the station's %d real registers. The extended "
             "range is answered but holds comms-buffer memory, not telemetry, so this "
-            "entity will publish meaningless values. See the README.",
+            "entity will publish meaningless values. See REGISTERS.md.",
             value, REAL_REGISTER_COUNT,
         )
     return value
@@ -49,7 +49,8 @@ BINARY_SENSORS = {
 }
 
 # Output flags, each one bit of the status register. Confirmed on a P180 Pro by
-# toggling each output on its own and diffing - see the README's register map.
+# toggling each output on its own and diffing - see the register map in
+# REGISTERS.md.
 # Reg 75 is the status register on this device, NOT reg 41 as on the P280/P310.
 # key -> (device_class, register, bitmask)
 BIT_SENSORS = {
