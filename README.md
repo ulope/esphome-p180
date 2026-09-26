@@ -59,8 +59,7 @@ Everything else — the register offsets, and what evidence backs each one — i
 - **ESPHome 2025.7.0 or newer**, for the `devices:` sub-device support used
   below — see [Sub-device vs. flat node](#sub-device-vs-flat-node) to run on
   older versions
-- The station's BLE MAC address — scan with nRF Connect or any BLE scanner app
-  and look for a device named `FOSSIBOT` or `POWER`
+- The station's BLE MAC address — either from the official app or any BLE scanner app (look for a device named `AFERIY`, `FOSSIBOT` or `POWER`).
 
 ## Example configuration
 
@@ -445,7 +444,7 @@ discarded — but worth a look at `VERBOSE`.
 
 Protocol framing and the initial register hypotheses come from
 [`Ylianst/ESP-FBot`](https://github.com/Ylianst/ESP-FBot) (AFERIY P310) and
-[`olofd/kraftverk`](https://github.com/olofd/kraftverk) (AFERIY P280). The P180
-shares their BLE UUIDs and Modbus framing but has its own, larger register
-table — see [REGISTERS.md](REGISTERS.md) for how far the upstream maps do and do
-not carry over.
+[`olofd/kraftverk`](https://github.com/olofd/kraftverk) (AFERIY P280). 
+The initial work for P180 support happened in [enelson493/esphome-p180](https://github.com/enelson493/esphome-p180).
+The P180 shares the BLE UUIDs and Modbus framing but has its own register
+table — see [REGISTERS.md](REGISTERS.md) for how far the upstream maps do and do not carry over.
