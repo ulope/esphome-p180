@@ -291,8 +291,11 @@ void P180Component::handle_frame_(const uint8_t *frame, uint16_t len, uint8_t fu
 
   const RegSource source = (func == P180_FUNC_READ_INPUT) ? REG_SOURCE_INPUT : REG_SOURCE_HOLDING;
 
-  // A probe that changes the register count invalidates the diff baseline -
-  // otherwise the extra registers all read as "changed" against stale zeros.
+  // A reply whose register count differs from the last one invalidates the diff
+  // baseline - otherwise the extra registers all read as "changed" against
+  // stale zeros. In practice each table's count is fixed, so this only fires on
+  // the first frame; it is here so a firmware that returns a different count
+  // cannot produce a page of bogus change lines.
   if (this->reg_count_[source] != count) {
     if (this->have_baseline_[source]) {
       ESP_LOGI(TAG, "%s register count changed %u -> %u, resetting diff baseline", source_name_(source),
@@ -429,22 +432,6 @@ void P180Component::dump_holding_registers() {
   this->send_read_request_(P180_FUNC_READ_HOLDING, 0, P180_HOLDING_REG_COUNT);
 }
 
-void P180Component::probe_extended_registers() {
-  if (!this->ready_()) {
-    ESP_LOGW(TAG, "Not connected - cannot probe");
-    return;
-  }
-  ESP_LOGI(TAG,
-           "Probing %u input registers (the station volunteers %u). This message is printed "
-           "before the request, not a verdict - read the dump that follows. No dump, or a CRC "
-           "warning, means the range is not answered. On a P180 Pro it IS answered, but the "
-           "data above register %u is comms-buffer memory, not telemetry (see the README).",
-           static_cast<unsigned>(P180_MAX_REGS), static_cast<unsigned>(P180_INPUT_REG_COUNT),
-           static_cast<unsigned>(P180_INPUT_REG_COUNT - 1));
-  this->dump_pending_[REG_SOURCE_INPUT] = true;
-  this->send_read_request_(P180_FUNC_READ_INPUT, 0, P180_MAX_REGS);
-}
-
 void P180Component::reset_baseline() {
   this->have_baseline_[REG_SOURCE_INPUT] = false;
   this->have_baseline_[REG_SOURCE_HOLDING] = false;
@@ -467,9 +454,6 @@ void P180Button::press_action() {
       break;
     case P180_BUTTON_DUMP_HOLDING:
       this->parent_->dump_holding_registers();
-      break;
-    case P180_BUTTON_PROBE_EXTENDED:
-      this->parent_->probe_extended_registers();
       break;
     case P180_BUTTON_RESET_BASELINE:
       this->parent_->reset_baseline();

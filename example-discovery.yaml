@@ -108,26 +108,27 @@ p180:
   # below are usually what you want instead.
   debug_dump: false
 
+# The buttons ship disabled_by_default so they stay out of the way on a normal
+# install. This is a discovery config, so turn them back on - otherwise you
+# would have to enable each one in the Home Assistant UI before you could start.
 button:
   - platform: p180
     p180_id: p180_main
     action: reset_baseline
     name: "Reset Baseline"
+    disabled_by_default: false
     device_id: p180_device
   - platform: p180
     p180_id: p180_main
     action: dump_input
     name: "Dump Status Registers"
+    disabled_by_default: false
     device_id: p180_device
   - platform: p180
     p180_id: p180_main
     action: dump_holding
     name: "Dump Settings Registers"
-    device_id: p180_device
-  - platform: p180
-    p180_id: p180_main
-    action: probe_extended
-    name: "Probe Extended Registers"
+    disabled_by_default: false
     device_id: p180_device
 
 sensor:
