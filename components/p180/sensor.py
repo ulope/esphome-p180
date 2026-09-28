@@ -1,5 +1,3 @@
-import logging
-
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
@@ -11,32 +9,14 @@ from . import (
     CONF_SIGNED,
     CONF_SOURCE,
     MAX_REGISTER,
-    REAL_REGISTER_COUNT,
     REG_SOURCES,
     P180Component,
 )
 
-_LOGGER = logging.getLogger(__name__)
-
-
-def _register_number(value):
-    """Validate a register number, warning if it is past the real table.
-
-    The probe button can read up to MAX_REGISTER, but only the first
-    REAL_REGISTER_COUNT are telemetry - above that the station returns
-    comms-buffer memory. Binding an entity there is almost always a mistake,
-    so warn rather than silently publishing garbage.
-    """
-    value = cv.int_range(min=0, max=MAX_REGISTER)(value)
-    if value >= REAL_REGISTER_COUNT:
-        _LOGGER.warning(
-            "p180: register %d is above the station's %d real registers. The extended "
-            "range is answered but holds comms-buffer memory, not telemetry, so this "
-            "entity will publish meaningless values. See REGISTERS.md.",
-            value, REAL_REGISTER_COUNT,
-        )
-    return value
-
+# Registers 0-99 are the real table. The station answers a request for 160, but
+# everything above 99 is comms-buffer memory rather than telemetry, and nothing
+# asks for that range any more - so it is a hard bound, not a warning.
+_REGISTER_NUMBER = cv.int_range(min=0, max=MAX_REGISTER)
 
 CONF_RAW_REGISTERS = "raw_registers"
 
@@ -182,7 +162,7 @@ RAW_REGISTER_SCHEMA = sensor.sensor_schema(
     state_class="measurement",
 ).extend(
     {
-        cv.Required(CONF_REGISTER): _register_number,
+        cv.Required(CONF_REGISTER): _REGISTER_NUMBER,
         cv.Optional(CONF_SOURCE, default="input"): cv.enum(REG_SOURCES, lower=True),
         cv.Optional(CONF_SCALE, default=1.0): cv.float_,
         cv.Optional(CONF_SIGNED, default=False): cv.boolean,

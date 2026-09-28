@@ -324,7 +324,7 @@ Generic — expose any register without touching C++:
 
 ```yaml
 raw_registers:
-  - register: 56          # 0-159
+  - register: 56          # 0-99
     name: "Reg 56"
     source: holding       # `input` (0x04, default) or `holding` (0x03)
     scale: 0.1            # default 1.0
@@ -353,14 +353,19 @@ raw_bits:
 
 ### `button:` platform
 
-Diagnostic, all reads — none of them writes to the station.
+Register-discovery tools, all reads — none of them writes to the station.
 
 | `action:` | What it does |
 |---|---|
 | `reset_baseline` | Clear the change-logging baseline and dump the new reference |
 | `dump_input` | Dump the 100-register status table |
 | `dump_holding` | Dump the 80-register settings table |
-| `probe_extended` | Ask for 160 status registers instead of 100 |
+
+These are `entity_category: diagnostic` and **`disabled_by_default: true`**, so
+they will not clutter the device page on a normal install. Enable the one you
+want in Home Assistant when you need it (Settings → Devices → the battery →
+*+N disabled entities*), or set `disabled_by_default: false` in YAML — which is
+what [`example-discovery.yaml`](example-discovery.yaml) does.
 
 Every entity on every platform also accepts the standard ESPHome `device_id:`,
 used above to attach it to the battery sub-device.

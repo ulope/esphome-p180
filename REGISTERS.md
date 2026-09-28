@@ -152,9 +152,9 @@ captures is a power cycle, not a counter wrapping.
 
 ### Registers above 99 are not telemetry
 
-The **Probe Extended Registers** button asks for 160 registers and the P180 Pro
-**does answer** — the frame parses and the CRC passes. But the extra range is a
-communications buffer read out of bounds:
+A **Probe Extended Registers** button used to ask for 160 registers, and the
+P180 Pro **does answer** — the frame parses and the CRC passes. But the extra
+range is a communications buffer read out of bounds:
 
 | Register | Bytes | Meaning |
 |---|---|---|
@@ -165,12 +165,16 @@ communications buffer read out of bounds:
 | everything else | `0000` | — |
 
 The request bytes are byte-for-byte what the component transmitted, so nothing
-above register 99 can be trusted as a measurement. Binding an entity up there
-produces a config warning.
+above register 99 can be trusted as a measurement.
 
-The probe's own log line is printed *before* the request goes out — it describes
-what to look for, it is not a verdict. The dump that follows, and the
-`input register count changed 100 -> 160` line, are the actual result.
+**That settles it, so the probe button is gone** and nothing requests the range
+any more. `register:` is now bounded at 99 — binding an entity above the real
+table used to warn and publish garbage, and is now a config error. The C++
+buffers shrank to match.
+
+Re-checking this on another unit means re-adding a one-shot request for 160
+registers; the framing already derives the frame length from the echoed count,
+so nothing else needs to change.
 
 ---
 
@@ -391,14 +395,16 @@ actually drawing power through it is what reveals the measurement registers.
 
 ### Probe buttons
 
-All four are reads; none writes to the station.
+All three are reads; none writes to the station. They ship
+`disabled_by_default: true`, so a discovery config wants
+`disabled_by_default: false` on each — see
+[`example-discovery.yaml`](example-discovery.yaml).
 
 | Action | What it does |
 |---|---|
 | `reset_baseline` | Clear the diff baseline before an experiment |
 | `dump_input` | Request and dump the 100-register status table |
 | `dump_holding` | Request and dump the 80-register settings table |
-| `probe_extended` | Ask for 160 status registers, to find out whether more exist |
 
 Dumps are chunked 16 registers per line and register-indexed, so values line up
 with the map:
@@ -453,9 +459,8 @@ Run with `log_changes: true` and `ignore_registers: [12, 13, 31]`, pressing
 | 10 | Solar/DC input, if available | DC input power/voltage |
 | 11 | Let SoC move ≥1 % while discharging | SoC scaling, time-to-empty/full |
 | 12 | Long idle / sustained high load | temperature registers |
-| 13 | Press **Probe Extended Registers** | whether >100 registers exist |
-| 14 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how eight of the twelve mapped settings registers were found |
-| 15 | Flip the rear 1000 W / 500 W input switch | status reg 1 (3 ↔ 5) and reg 2. *Not* the settings table |
+| 13 | Change a setting in the AFERIY app | a `holding reg NN` line within `settings_interval` — this is how eight of the twelve mapped settings registers were found |
+| 14 | Flip the rear 1000 W / 500 W input switch | status reg 1 (3 ↔ 5) and reg 2. *Not* the settings table |
 
 ---
 

@@ -35,19 +35,20 @@ static const uint8_t P180_SLAVE_ADDR = 0x11;
 static const uint8_t P180_FUNC_READ_HOLDING = 0x03;  // settings
 static const uint8_t P180_FUNC_READ_INPUT = 0x04;    // live status
 
-// The P180 volunteers 100 input registers (vs. the P310's 80). 160 is the upper
-// bound the `probe_extended` button asks for - kraftverk reports 160 reachable
-// on the Sydpower stack - and it sizes the buffers below.
+// The P180 volunteers 100 input registers (vs. the P310's 80). A 160-register
+// probe IS answered, but everything above 99 turned out to be comms-buffer
+// memory - it held our own Modbus request echoed back verbatim - so nothing
+// asks for it any more and 100 is the real bound. See REGISTERS.md.
 static const uint16_t P180_INPUT_REG_COUNT = 100;
 static const uint16_t P180_HOLDING_REG_COUNT = 80;
-static const uint16_t P180_MAX_REGS = 160;
+static const uint16_t P180_MAX_REGS = 100;
 
 // Responses are NOT standard Modbus RTU framing. Instead of a single byte-count
 // field, the device echoes the request's 4-byte start+count before the data:
 //   addr(1) func(1) start(2) count(2) | count*2 data bytes | crc(2)
 // which is why a 100-register reply is 6 + 200 + 2 = 208 bytes. The register
 // count therefore lives at bytes 4..5, and the frame length is derived from it
-// rather than hardcoded, so a longer probe reply still parses.
+// rather than assumed.
 static const uint16_t P180_HEADER_LEN = 6;
 static const uint16_t P180_CRC_LEN = 2;
 static const uint16_t P180_MAX_FRAME_LEN = P180_HEADER_LEN + P180_MAX_REGS * 2 + P180_CRC_LEN;
@@ -75,8 +76,7 @@ enum RegSource : uint8_t {
 enum P180ButtonAction : uint8_t {
   P180_BUTTON_DUMP_INPUT = 0,
   P180_BUTTON_DUMP_HOLDING = 1,
-  P180_BUTTON_PROBE_EXTENDED = 2,
-  P180_BUTTON_RESET_BASELINE = 3,
+  P180_BUTTON_RESET_BASELINE = 2,
 };
 
 // A sensor bound to one register. Named sensors and YAML `raw_registers:` entries
@@ -144,7 +144,6 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   // --- Probe actions (all reads - no 0x06 writes anywhere) ---------------
   void dump_input_registers();
   void dump_holding_registers();
-  void probe_extended_registers();
   void reset_baseline();
 
  protected:
