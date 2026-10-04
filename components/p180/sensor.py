@@ -25,8 +25,13 @@ CONF_RAW_REGISTERS = "raw_registers"
 # a real P180 (Aug 2026) - NOT the same offsets as the P310/P280 maps.
 # key -> (unit, accuracy_decimals, device_class, register, scale, signed[, source])
 #
-# `source` defaults to "input" (the 0x04 status table). The two settings
-# registers below are the only ones confirmed in the 0x03 table so far.
+# `source` defaults to "input" (the 0x04 status table).
+#
+# Pick device_class for what the value IS, not for its unit. `battery` in
+# particular is special: it declares "this is the device's charge level", and
+# Home Assistant uses it for the battery badge on the device page, so exactly
+# one entity here may carry it - battery_percent. A percentage that is a
+# setting (a charge or discharge limit) takes unit "%" and no device class.
 #
 # To promote a newly identified register to a first-class sensor, add one line
 # here. No C++ change is needed.
@@ -121,13 +126,20 @@ REGISTER_SENSORS = {
     "silent_charge_current": ("A", 0, "current", 23, 1.0, False, "holding"),
     # Discharge floor, tenths of a percent. Measured: changing the app's
     # discharge limit from 10% to 16% moved holding 26 from 100 to 160.
-    "discharge_limit": ("%", 0, "battery", 26, 0.1, False, "holding"),
+    #
+    # NO device_class, deliberately. `battery` does not mean "a percentage" - it
+    # means "the charge level of this device", and Home Assistant promotes such
+    # an entity to the battery badge in the device page title. With it set here
+    # the badge showed the limit instead of battery_percent. Only
+    # battery_percent (status reg 31) may carry it.
+    "discharge_limit": ("%", 0, None, 26, 0.1, False, "holding"),
     # Charge ceiling, tenths of a percent. Measured: 85% -> 88% in the app moved
     # holding 27 from 850 to 880. The German app labels this "AC Ladelimit im
     # ESP modus"; the mode name is most likely EPS/UPS (the unit stays plugged
     # in and holds a reserve), but that reading is not confirmed, only the
     # register and its scaling are.
-    "ac_charge_limit": ("%", 0, "battery", 27, 0.1, False, "holding"),
+    # No device_class, for the same reason as discharge_limit above.
+    "ac_charge_limit": ("%", 0, None, 27, 0.1, False, "holding"),
 }
 
 
