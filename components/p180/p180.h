@@ -6,10 +6,12 @@
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/button/button.h"
 
 #include <esp_gattc_api.h>
 
+#include <string>
 #include <vector>
 
 namespace esphome {
@@ -100,6 +102,16 @@ struct RegisterBitSensor {
   RegSource source;
 };
 
+// A text sensor bound to one enum register: the raw value indexes `options`.
+// Reg 79 (light mode) is the only one so far, but nothing here is specific to
+// it - a second enum register just needs another row in text_sensor.py.
+struct RegisterTextSensor {
+  text_sensor::TextSensor *sensor;
+  uint16_t reg;
+  RegSource source;
+  std::vector<std::string> options;
+};
+
 class P180Component : public esphome::ble_client::BLEClientNode, public Component {
  public:
   void setup() override;
@@ -132,6 +144,10 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
   }
   void add_register_bit_sensor(uint16_t reg, uint16_t mask, RegSource source, binary_sensor::BinarySensor *s) {
     this->register_bit_sensors_.push_back(RegisterBitSensor{s, reg, mask, source});
+  }
+  void add_register_text_sensor(uint16_t reg, RegSource source, std::vector<std::string> options,
+                                text_sensor::TextSensor *s) {
+    this->register_text_sensors_.push_back(RegisterTextSensor{s, reg, source, std::move(options)});
   }
 
   // --- Derived entities (computed, not a straight register read) ---------
@@ -186,6 +202,7 @@ class P180Component : public esphome::ble_client::BLEClientNode, public Componen
 
   std::vector<RegisterSensor> register_sensors_;
   std::vector<RegisterBitSensor> register_bit_sensors_;
+  std::vector<RegisterTextSensor> register_text_sensors_;
 
 
   binary_sensor::BinarySensor *connected_binary_sensor_{nullptr};

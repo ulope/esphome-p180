@@ -157,9 +157,10 @@ sensor:
     ac_out_frequency:
       name: "AC Output Frequency"
       device_id: p180_device
-    # 0 = off, one value per mode as you cycle the light button.
+    # Raw 0-3. Kept here alongside the named text_sensor below because a bare
+    # number is what shows up in a `log_changes` diff line.
     light_mode:
-      name: "Light Mode"
+      name: "Light Mode (raw)"
       device_id: p180_device
     # Tracks a USB-C PD load exactly (0 -> 11 -> 15 -> 33 -> 37 W).
     usb_output_power:
@@ -305,6 +306,14 @@ sensor:
         source: holding
         name: "Holding 7 (unidentified, 1)"
         device_id: p180_device
+
+text_sensor:
+  - platform: p180
+    p180_id: p180_main
+    # Off / On / SOS / Flash, from reg 79.
+    light_mode:
+      name: "Light Mode"
+      device_id: p180_device
 
 binary_sensor:
   - platform: p180
