@@ -50,7 +50,9 @@ REGISTER_SENSORS = {
     "battery_discharge_power": ("W", 0, "power", 13, 1.0, False),
     # Raw value IS the percent on this device - no scaling.
     "battery_percent": ("%", 0, "battery", 31, 1.0, False),
-    # Light mode enum: 0 = off, then one value per mode as you cycle the button.
+    # Light mode, raw 0-3: 0 Off, 1 On, 2 SOS, 3 Flash. The text_sensor platform
+    # publishes the names; this is the bare number, which is what a log_changes
+    # diff line shows.
     # Confirmed on a P180 Pro. NOTE: it steps by 1, so it is invisible unless
     # `change_threshold` is 0.
     "light_mode": (None, 0, None, 79, 1.0, False),

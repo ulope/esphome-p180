@@ -56,7 +56,7 @@ are genuinely idle fields, not a parsing problem.
 | 72 | ~5400 all-off, ~1550 AC idle, 15 at 2.2 kW | **Remaining runtime, minutes** — `remaining_time` | **measured** — matches the station's own display |
 | 75 | bitmask | **Status bits** — see [below](#status-bitmask--register-75) | **measured** |
 | 78 | `11`→`15`→`33`→`37` under a USB-C PD load | **USB output power (W)** — `usb_output_power` | **measured** |
-| 79 | `0`, then one value per mode | **Light mode** enum — `light_mode` | **measured** |
+| 79 | `0`→`1`→`2`→`3` as the light button cycles | **Light mode** enum — `light_mode`: 0 Off, 1 On, 2 SOS, 3 Flash | **measured** that it steps by one per press; the names and their order are from the station's own UI |
 | 90 | `+1095` discharging, `−1002` charging | **Signed AC power (W)** — `ac_power`. [Details](#charging) | **measured** |
 | 97–99 | `0x1901 0x0203 0x0405` | version/serial info? | **guess** — constant in every capture |
 

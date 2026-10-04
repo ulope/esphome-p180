@@ -168,9 +168,6 @@ sensor:
     usb_output_power:
       name: "USB Output Power"
       device_id: p180_device
-    light_mode:
-      name: "Light Mode"
-      device_id: p180_device
 
     # --- settings, read from the 0x03 table ---
     discharge_limit:
@@ -214,6 +211,16 @@ sensor:
     panel_firmware_version:
       name: "Panel Firmware"
       entity_category: diagnostic
+      device_id: p180_device
+
+text_sensor:
+  - platform: p180
+    p180_id: p180_main
+
+    # Off / On / SOS / Flash. The raw 0-3 number is also available as the
+    # `light_mode` key on the `sensor:` platform if you prefer it.
+    light_mode:
+      name: "Light Mode"
       device_id: p180_device
 
 binary_sensor:
@@ -307,7 +314,7 @@ From the status table (`0x04`):
 | `battery_discharge_power` | W | `usb_output_power` | W |
 | `ac_in_voltage` | V | `ac_out_voltage` | V |
 | `ac_in_frequency` | Hz | `ac_out_frequency` | Hz |
-| `charge_rate_step` | — | `light_mode` | — |
+| `charge_rate_step` | — | `light_mode` | — (raw 0-3; see `text_sensor:`) |
 
 From the settings table (`0x03`):
 
@@ -330,6 +337,17 @@ raw_registers:
     scale: 0.1            # default 1.0
     signed: true          # default false; two's-complement
 ```
+
+### `text_sensor:` platform
+
+| Key | Meaning |
+|---|---|
+| `light_mode` | `Off` / `On` / `SOS` / `Flash` |
+
+A value outside the known set publishes `Unknown (N)` rather than mapping to a
+neighbour. The same register is also available as a raw 0-3 number under
+`light_mode` on the `sensor:` platform — the keys are on different platforms,
+so you can have either or both.
 
 ### `binary_sensor:` platform
 

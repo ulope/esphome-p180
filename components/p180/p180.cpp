@@ -400,6 +400,21 @@ void P180Component::publish_(RegSource source) {
     entry.sensor->publish_state((regs[entry.reg] & entry.mask) != 0);
   }
 
+  for (auto &entry : this->register_text_sensors_) {
+    if (entry.source != source || entry.reg >= count) {
+      continue;
+    }
+    const uint16_t value = regs[entry.reg];
+    if (value < entry.options.size()) {
+      entry.sensor->publish_state(entry.options[value]);
+    } else {
+      // Publish the number rather than clamping or skipping: a value outside
+      // the known set means the station has a mode we have not mapped, and
+      // that should be visible instead of silently reading as a known one.
+      entry.sensor->publish_state(str_sprintf("Unknown (%u)", static_cast<unsigned>(value)));
+    }
+  }
+
   // Derived entities are all driven by the live status table.
   if (source != REG_SOURCE_INPUT) {
     return;
