@@ -274,6 +274,33 @@ sensor:
       - register: 37
         name: "Reg 37 (charge status bits?)"
         device_id: p180_device
+      # 36 pairs with 37 and reads 0x3000 idle.
+      - register: 36
+        name: "Reg 36 (pairs with 37?)"
+        device_id: p180_device
+      # 38/39 appeared alongside an add-on battery reading EXACTLY what 36/37
+      # read in the same dump (0x3000 / 0x4000). If 36/37 is a per-pack block,
+      # these are the second pack. Disconnect the add-on battery and watch
+      # whether they go to 0 - that is the whole test.
+      - register: 38
+        name: "Reg 38 (second pack's 36?)"
+        device_id: p180_device
+      - register: 39
+        name: "Reg 39 (second pack's 37?)"
+        device_id: p180_device
+      # Read 2 with two packs attached, so possibly a pack count. One data
+      # point, and 2 is a small number - disconnect the add-on battery and see
+      # whether it reads 1.
+      - register: 47
+        name: "Reg 47 (pack count?)"
+        device_id: p180_device
+      # 2525 with an add-on battery attached, never recorded non-zero before.
+      # /100 = 25.25, in range for a 24V-class pack voltage; as-is it is in
+      # range for a pack energy in Wh. Put a steady AC load on: a voltage sags
+      # and recovers, a remaining-energy field only falls.
+      - register: 32
+        name: "Reg 32 (pack voltage or energy?)"
+        device_id: p180_device
       # AC OUTPUT energy since power-on, 10Wh (0.01 kWh) per count - confirmed
       # at three different load levels. Rises only under AC load and holds when
       # it stops, but RESETS TO 0 when the station restarts, so it is not a
@@ -297,14 +324,65 @@ sensor:
         source: holding
         name: "Holding 21 (unidentified, 15)"
         device_id: p180_device
-      # Unexplained so far. Everything else in the table reads 0.
+      # Unexplained so far. Read 800 for a long time, then 100 - which is what
+      # holding 33 took over. Not known to be related.
       - register: 4
         source: holding
-        name: "Holding 4 (unidentified, 800)"
+        name: "Holding 4 (unidentified)"
         device_id: p180_device
       - register: 7
         source: holding
         name: "Holding 7 (unidentified, 1)"
+        device_id: p180_device
+      # --- all zero until an add-on battery was attached ---
+      # Large and unstructured. An ID or a serial would look like this.
+      - register: 5
+        source: holding
+        name: "Holding 5 (unidentified)"
+        device_id: p180_device
+      - register: 6
+        source: holding
+        name: "Holding 6 (unidentified)"
+        device_id: p180_device
+      # 33 read 800 - the same value holding 27 (the charge ceiling) held in
+      # that dump. Move the AC charge limit in the app and see if both follow.
+      - register: 33
+        source: holding
+        name: "Holding 33 (per-pack charge ceiling?)"
+        device_id: p180_device
+      # 34 and 36 read 0xFFFF, which looks like a not-set sentinel.
+      - register: 34
+        source: holding
+        name: "Holding 34 (unidentified, 0xFFFF)"
+        device_id: p180_device
+      - register: 35
+        source: holding
+        name: "Holding 35 (unidentified, 10)"
+        device_id: p180_device
+      - register: 36
+        source: holding
+        name: "Holding 36 (unidentified, 0xFFFF)"
+        device_id: p180_device
+      # 68-71 read 0A00 0A0A 0A0A 0A0A - as bytes, seven slots of 10 and one 0,
+      # so plausibly a per-cell or per-module array.
+      #
+      # WARNING: holding 68 is the register that permanently bricks the station
+      # when written 0. Reading it is fine; this component never writes.
+      - register: 68
+        source: holding
+        name: "Holding 68 (per-module array?)"
+        device_id: p180_device
+      - register: 69
+        source: holding
+        name: "Holding 69 (per-module array?)"
+        device_id: p180_device
+      - register: 70
+        source: holding
+        name: "Holding 70 (per-module array?)"
+        device_id: p180_device
+      - register: 71
+        source: holding
+        name: "Holding 71 (per-module array?)"
         device_id: p180_device
 
 text_sensor:
@@ -362,6 +440,18 @@ binary_sensor:
         bitmask: 0x0001
         name: "Reg 75 bit 0 (unidentified)"
         device_id: p180_device
-      # Nothing here: 0x0020 and 0x0040 are confirmed and are named sensors
-      # above. Only bit 0x0001 is left on reg 75, and it has never been seen
-      # set - if you find what sets it, add it here.
+      # 0x0080 and 0x0800 were both set in the first dump taken with an add-on
+      # battery attached, and had never been seen set before that. There is no
+      # stored dump from before, so this is not proof they are new.
+      - register: 75
+        bitmask: 0x0080
+        name: "Reg 75 bit 7 (unidentified)"
+        device_id: p180_device
+      - register: 75
+        bitmask: 0x0800
+        name: "Reg 75 bit 11 (unidentified)"
+        device_id: p180_device
+      # 0x0020 and 0x0040 are confirmed and are named sensors above. That
+      # leaves 0x0001, which has never been seen set, and 0x0080 / 0x0800
+      # above, which have only ever been seen set. If you pin any of them
+      # down, promote it to a named sensor in binary_sensor.py.

@@ -23,6 +23,7 @@ as its worst-supported row.
   - [Charging](#charging)
   - [Registers above 99 are not telemetry](#registers-above-99-are-not-telemetry)
 - [Settings table (`0x03`)](#settings-table-0x03)
+- [Add-on battery](#add-on-battery)
 - [Register 13 is unresolved](#register-13-is-unresolved)
 - [Remaining time and pack capacity](#remaining-time-and-pack-capacity)
 - [Discovery workflow](#discovery-workflow)
@@ -81,9 +82,16 @@ here. The mask is additive: with USB and AC both on it reads
 | `0x0010` | AC output | 3 on/off cycles |
 | `0x0020` | DC input type — set = DC, clear = PV | set on PV → DC, cleared on DC → PV, with all 80 holding registers byte-identical each time |
 | `0x0040` | Silent AC charging | `0x0010` → `0x0050` on enable, back on disable, with nothing else in the status table moving either time |
+| `0x0080` | *unidentified* | only ever seen **set**, in the one dump taken with an [add-on battery](#add-on-battery) attached |
+| `0x0800` | *unidentified* | likewise |
 
-Not every bit is an output: `0x0020` and `0x0040` are modes. Every bit except
-`0x0001` is a named binary sensor.
+Not every bit is an output: `0x0020` and `0x0040` are modes. Every confirmed bit
+is a named binary sensor; `0x0001`, `0x0080` and `0x0800` are bound as raw bits
+in `example-discovery.yaml` instead.
+
+`0x0080` and `0x0800` are **not** known to be new. There is no stored dump of the
+status table from before the add-on battery, so "never seen set" for them means
+only that no earlier capture recorded them.
 
 ### Charging
 
@@ -246,6 +254,120 @@ Flipping it 500 → 1000 W moved status reg 1 from 3 to 5 in the same poll, with
 reg 2 following 501 → 760 W five seconds later — but dumps taken either side of
 the flip are byte-identical across all 80 registers. It is a hardware switch, and
 the settings table only carries what the app can set.
+
+---
+
+## Add-on battery
+
+An add-on battery was attached and a single pair of dumps taken. **This is one
+uncontrolled observation, not an experiment.** Several things moved between it
+and the last pre-add-on dump — settings were edited, the station was restarted
+(`66`/`67` are back to `0`), and holding `47` moved — so a change appearing here
+is *not* evidence that the add-on battery caused it. Nothing in this section is
+graded above **inferred**, and most of it is a **guess**.
+
+Taken at 14:27, idle on battery: no mains, AC output off, USB output on at 24 W,
+light off, DC output off, PV input mode, silent charging off, SoC 92 %.
+
+```
+holding regs 000-015: 0000 0000 0000 0000 0064 0F81 2BE1 0001 0000 0000 0000 0000 0000 0000 0000 0000
+holding regs 016-031: 0000 0000 0000 0000 0000 000F 0000 0000 01E0 012C 0096 0320 0005 0003 01E0 0000
+holding regs 032-047: 0000 0320 FFFF 000A FFFF 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 000E
+holding regs 048-063: 0010 000C 000D 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+holding regs 064-079: 0000 0000 0000 0000 0A00 0A0A 0A0A 0A0A 0000 0000 0000 0000 0000 0000 0000 0000
+input regs 000-015: 0000 0005 0000 0000 0000 0000 0000 0000 0000 0000 0000 01F4 0000 0018 0000 0000
+input regs 016-031: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 005C
+input regs 032-047: 09DD 0000 0000 0000 3000 4000 3000 4000 0000 0000 0000 0000 0000 0000 0000 0002
+input regs 048-063: 0000 0000 0000 0000 0000 0000 0837 0000 0000 0000 0000 0000 0000 0000 0000 0000
+input regs 064-079: 0000 0000 0000 0000 0000 0000 0000 0000 0CF1 0000 0000 0888 0000 0000 0018 0000
+input regs 080-095: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+input regs 096-099: 0000 1901 0203 0405
+```
+
+### The evidence base for the status table is weaker than it looks
+
+The pre-add-on captures were kept outside the repo and are **gone**. For the
+settings table that does not matter — nine full pre-add-on holding dumps are
+quoted in this file and in the history, so its diff is solid. For the status
+table there is **no stored pre-add-on dump of registers 32–99 at all**. The only
+surviving baseline is this file's own sentence, that idle on battery with every
+output off *"only 9 of the 100 are non-zero"*, plus the per-register rows above.
+
+So "newly non-zero" below means "not in the recorded map and not consistent with
+that count" — not "observed as zero and then observed as non-zero". **The single
+most valuable next capture is a dump with the add-on battery disconnected**,
+which turns every row here into a real before/after. Dumps belong in this file
+from now on, not in a chat log.
+
+### Status table
+
+| Reg | Reads | Note |
+|---|---|---|
+| 32 | `0x09DD` = 2525 | Not in the recorded map. `÷100` = 25.25, which is in range for a 24 V-class pack voltage; `÷1` is in range for a pack energy in Wh. **guess** — see below |
+| 38 / 39 | `0x3000` / `0x4000` | **An exact copy of the `36`/`37` pair in the same dump.** The most interesting thing in the dump: a duplicated pair appearing alongside a second battery suggests `36`/`37` is a per-pack block, main pack at `36`/`37` and add-on at `38`/`39`. **guess**, but a cheap one to test |
+| 47 | `2` | Not in the recorded map. Reads exactly the number of packs now attached, so **pack count** is the obvious reading. **guess** — one data point, and 2 is a small number that many other fields could hold |
+| 75 | `0x0888` | `0x0008` USB output, as expected. `0x0080` and `0x0800` had **never been seen set** before. No pre-add-on dump rules out their being set all along |
+| 97–99 | `0x1901 0203 0405` | Not in the recorded map. The low bytes run `01 02 03 04 05`, which is the shape of a test or buffer pattern rather than a measurement — compare [registers above 99](#registers-above-99-are-not-telemetry). **guess** |
+
+Register `32` has two readings worth separating, and one capture settles it: put
+a steady AC load on and watch it. A pack voltage sags under load and recovers; a
+remaining-energy field falls monotonically and does not recover. Neither reading
+is consistent with `72` here — 3313 min at the 24 W of reg `13` implies about
+1325 Wh remaining, against 2525 raw or 2323 at 92 % of 2525 — but `72`'s idle
+estimate is already documented as unreliable, so that rules nothing out.
+
+Everything else in the status table is consistent with the existing map: `13` and
+`78` both read 24 W with USB the only output, which is a clean single-output
+confirmation of `13` as output-attributed power; `54` reads its documented USB
+value `0x0837`; `1` is `5` for the 1000 W switch position; `11` holds 500 with
+the output off.
+
+### Settings table
+
+Registers `24`, `25`, `28`, `29` and `30` are all back at the values they held
+before any of the settings experiments, and `26`/`27` hold new values in the same
+families. These are settings; they move when someone moves them, and nothing here
+says the add-on battery did it.
+
+| Reg | Was | Now | Note |
+|---|---|---|---|
+| 4 | `800` | `100` | Was already unidentified. Note `33` now holds the `800` this used to hold |
+| 5 / 6 | `0` / `0` | `3969` / `11233` | Newly non-zero, in 11 prior dumps always `0`. Large and unstructured — an ID or serial would look like this. **guess** |
+| 23 | `1` | `0` | **Contradicts the recorded reading.** See below |
+| 33 | `0` | `800` | Newly non-zero, and **equal to `27`**, the charge ceiling, in the same dump. If it mirrors `27` per pack, moving the ceiling in the app moves both. **guess** |
+| 34 / 36 | `0` / `0` | `0xFFFF` / `0xFFFF` | Newly non-zero. `0xFFFF` reads much more like a not-set sentinel than a measurement |
+| 35 | `0` | `10` | Newly non-zero |
+| 47 | `11` | `14` | **May falsify an existing row.** See below |
+| 68–71 | all `0` | `0A00 0A0A 0A0A 0A0A` | Newly non-zero. As bytes, `0A 00 0A 0A 0A 0A 0A 0A` — seven slots of 10 and one 0, so plausibly a per-cell or per-module array. **guess**. Note this block contains **holding 68, the register that bricks the station when written `0`** — one more reason the component stays read-only |
+
+**Holding 23 was recorded as "the stored silent-charging current, not an on/off
+state", on the evidence that it held at `5` straight through disabling the
+feature.** It now reads `0`, which is not a current. Either something else clears
+it, or the register is not purely a stored setpoint. The `1 → 5` mapping against
+the app's `1 A → 5 A` still stands; the "never cleared" part does not.
+
+**Holding 47 is the weakest row in the settings table and this dump may have
+broken it.** It was mapped to AC firmware v1.1 purely on list order — it read
+`11` and two listed components are v1.1. It now reads `14` while `48`, `49` and
+`50` are unchanged. If no firmware update happened, `47` is not a firmware
+version and the row is wrong. If one did, AC went v1.1 → v1.4 with nothing else
+moving — including the BMS, which is the component a second pack would be most
+likely to touch. **Check the app's Firmware-Version screen before trusting this
+row.** The registers pinned by value alone — `48` v1.6, `49` v1.2, `50` v1.3 —
+are unaffected either way.
+
+### What to capture next
+
+Ranked by what they settle per unit of effort:
+
+1. **A dump with the add-on battery disconnected.** Turns every "newly non-zero"
+   above into a real before/after, and immediately tests input `47` as a pack
+   count and `38`/`39` as the second pack's block.
+2. **The app's Firmware-Version screen**, against holding `47` = `14`.
+3. **Move the AC charge limit in the app** and see whether holding `33` follows
+   `27`.
+4. **A steady AC load**, watching input `32` for sag-and-recover against
+   monotonic decline.
 
 ---
 
@@ -528,6 +650,14 @@ Conclusions that were recorded here and later turned out to be wrong.
 - **Holding 24 and 30 are 8-minute timeouts.** Extrapolated from 25 being
   seconds, the moment 25 was confirmed. They are minutes, so 480 is 8 hours. One
   register's units say nothing about its neighbour's.
+- **Holding 23 is never cleared.** Recorded as a stored setpoint that survives
+  disabling silent charging, on the evidence that it held at `5` through a
+  disable. It later read `0`, which is not a current. The `1 A`/`5 A` mapping
+  survives; "never cleared" does not.
+- **The pre-add-on status dumps are safe outside the repo.** They were kept only
+  in a chat log and are gone, which left registers 32-99 with no stored baseline
+  at the moment one was needed. Captures that a conclusion rests on belong in
+  this file.
 - **Reg 53 is an additive bitmask** (`0x10` AC out + `0x68` AC in = `0x78`).
   Downgraded to *guess*: a later capture with AC input and output both on reads
   `0x38`. That sample had charging stopped at the ceiling, so the missing `0x40`
