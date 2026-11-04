@@ -278,10 +278,11 @@ sensor:
       - register: 36
         name: "Reg 36 (pairs with 37?)"
         device_id: p180_device
-      # 38/39 appeared alongside an add-on battery reading EXACTLY what 36/37
-      # read in the same dump (0x3000 / 0x4000). If 36/37 is a per-pack block,
-      # these are the second pack. Disconnect the add-on battery and watch
-      # whether they go to 0 - that is the whole test.
+      # 38/39 read EXACTLY what 36/37 read in the same dump (0x3000 / 0x4000),
+      # which is what a per-pack block looks like with a second pack attached.
+      # That the values match is a within-dump fact, so the firmware update and
+      # reset that happened at the same time do not explain it away. Disconnect
+      # the add-on pack and watch whether they go to 0 - that is the whole test.
       - register: 38
         name: "Reg 38 (second pack's 36?)"
         device_id: p180_device
@@ -289,15 +290,18 @@ sensor:
         name: "Reg 39 (second pack's 37?)"
         device_id: p180_device
       # Read 2 with two packs attached, so possibly a pack count. One data
-      # point, and 2 is a small number - disconnect the add-on battery and see
+      # point, 2 is a small number many fields could hold, and a firmware update
+      # and reset happened at the same time - disconnect the add-on pack and see
       # whether it reads 1.
       - register: 47
         name: "Reg 47 (pack count?)"
         device_id: p180_device
-      # 2525 with an add-on battery attached, never recorded non-zero before.
-      # /100 = 25.25, in range for a 24V-class pack voltage; as-is it is in
-      # range for a pack energy in Wh. Put a steady AC load on: a voltage sags
-      # and recovers, a remaining-energy field only falls.
+      # 2525, never recorded non-zero before. /100 = 25.25, in range for a
+      # 24V-class pack voltage; as-is it is in range for a pack energy in Wh.
+      # Two ways to tell: put a steady AC load on (a voltage sags and recovers,
+      # a remaining-energy field only falls), or detach the add-on pack (packs
+      # in parallel share a voltage, so voltage barely moves while a capacity
+      # or energy field drops a lot).
       - register: 32
         name: "Reg 32 (pack voltage or energy?)"
         device_id: p180_device
@@ -334,7 +338,9 @@ sensor:
         source: holding
         name: "Holding 7 (unidentified, 1)"
         device_id: p180_device
-      # --- all zero until an add-on battery was attached ---
+      # --- all zero until an add-on pack, an AC firmware update to v1.4 and a
+      # reset, all of which happened before the first dump that showed them. Any
+      # of the three could be the cause; detaching the pack separates them. ---
       # Large and unstructured. An ID or a serial would look like this.
       - register: 5
         source: holding
